@@ -7,11 +7,11 @@ const INDUSTRIAL_LIGHT={bg:"#faf8f5",surface:"#ffffff",surfaceAlt:"#f5f2ee",bord
 const INDUSTRIAL={bg:"#f5f0eb",surface:"#ebe6df",surfaceAlt:"#e0dbd4",border:"#c8c3bc",borderLight:"#d5d0c9",text:"#2c2a26",textDim:"#6b6860",textMuted:"#908d85",accent:"#4a7c59",accentGlow:"rgba(74,124,89,0.12)",red:"#b33a3a",redDim:"rgba(179,58,58,0.08)",blue:"#3d6b99",blueDim:"rgba(61,107,153,0.08)",yellow:"#a67c3d",yellowDim:"rgba(166,124,61,0.08)",purple:"#7a5ea8",purpleDim:"rgba(122,94,168,0.08)",orange:"#c47a35",orangeDim:"rgba(196,122,53,0.08)",cyan:"#3d8a8a",cyanDim:"rgba(61,138,138,0.08)",hover:"rgba(0,0,0,0.04)",sidebarBg:"#d8d3cc",thBg:"#cec9c2"};
 const PLANNER={bg:"#faf6f1",surface:"#ffffff",surfaceAlt:"#f5f0ea",border:"#e8e0d6",borderLight:"#ede6dd",text:"#2d2926",textDim:"#6b635a",textMuted:"#a09890",accent:"#c4622a",accentGlow:"rgba(196,98,42,0.10)",red:"#c43a3a",redDim:"rgba(196,58,58,0.08)",blue:"#4a7a9b",blueDim:"rgba(74,122,155,0.08)",yellow:"#c49a2a",yellowDim:"rgba(196,154,42,0.08)",purple:"#8a5ea0",purpleDim:"rgba(138,94,160,0.08)",orange:"#c4622a",orangeDim:"rgba(196,98,42,0.08)",cyan:"#3a8a7a",cyanDim:"rgba(58,138,122,0.08)",hover:"rgba(0,0,0,0.03)",sidebarBg:"#2d2926",thBg:"#f0e8df"};
 const TABS_M=[{id:"dashboard",l:"Dashboard",ic:"◉"},{id:"comp",l:"Comparação",ic:"⚖"},{id:"evo",l:"Evolução",ic:"📈"}];
-const TABS_I=[{id:"rf",l:"Renda Fixa",ic:"▤"},{id:"inco",l:"INCO",ic:"⌂"},{id:"ac",l:"Ações",ic:"▲"},{id:"etf",l:"ETFs",ic:"◆"},{id:"fii",l:"FIIs",ic:"⬡"},{id:"cr",l:"Cripto",ic:"◈"},{id:"ap",l:"Aportes",ic:"↗"},{id:"sim",l:"Simulação",ic:"🧮"}];
+const TABS_I=[{id:"rf",l:"Renda Fixa",ic:"▤"},{id:"inco",l:"INCO",ic:"⌂"},{id:"td",l:"Tesouro Direto",ic:"🏛"},{id:"ac",l:"Ações",ic:"▲"},{id:"etf",l:"ETFs",ic:"◆"},{id:"fii",l:"FIIs",ic:"⬡"},{id:"cr",l:"Cripto",ic:"◈"},{id:"ap",l:"Aportes",ic:"↗"},{id:"sim",l:"Simulação",ic:"🧮"}];
 const TABS_G=[{id:"orc",l:"Orçamento",ic:"☰"},{id:"irpf",l:"IRPF",ic:"📋"},{id:"prf",l:"PRF",ic:"📊"},{id:"imoveis",l:"Imóveis",ic:"🏠"}];
 const TABS_S=[{id:"ind",l:"Índices",ic:"≡"},{id:"cfg",l:"Config",ic:"⚙"}];
 const ALL_T=[...TABS_M,...TABS_I,...TABS_G,...TABS_S];
-const SK={rf:"ip8-rf",ac:"ip8-ac",etf:"ip8-etf",fii:"ip8-fii",cr:"ip8-cr",ind:"ip8-ind",indLF:"ip8-indLF",ap:"ip8-ap",orc:"ip8-orc",inco:"ip8-inco",banks:"ip8-banks",theme:"ip8-theme",apMeta:"ip8-apMeta",fiiMkt:"ip8-fiiMkt",rates:"ip8-rates",evo:"ip8-evo",cryptoQ:"ip8-cryptoQ",prfRef:"ip8-prfRef"};
+const SK={rf:"ip8-rf",ac:"ip8-ac",etf:"ip8-etf",fii:"ip8-fii",cr:"ip8-cr",ind:"ip8-ind",indLF:"ip8-indLF",ap:"ip8-ap",orc:"ip8-orc",inco:"ip8-inco",banks:"ip8-banks",theme:"ip8-theme",apMeta:"ip8-apMeta",fiiMkt:"ip8-fiiMkt",rates:"ip8-rates",evo:"ip8-evo",cryptoQ:"ip8-cryptoQ",prfRef:"ip8-prfRef",tdApos:"ip8-tdApos",tdLiza:"ip8-tdLiza"};
 const DEF_PRF_REF={diariaInterior:335,diariaCapitais:380,diariaSPRJ:425,horaGECC:165.78,horaADFRON:11.50,diaADFRON:92};
 function ld(k,fb){try{const r=localStorage.getItem(k);return r?JSON.parse(r):fb;}catch{return fb;}}
 function sv(k,d){try{localStorage.setItem(k,JSON.stringify(d));}catch(e){console.error(e);}}
@@ -496,15 +496,28 @@ function ApTab({data,setData,banks,meta,setMeta}){const P=useT();const S=useS();
 }
 
 /* ORC — complete rewrite */
-const ORC_C=["Água","Almoços","Assinaturas","Celular","Clube","Comer Fora","Diarista","Educação","Gasolina","iFood","INSS","Internet","Investimentos","Jardim","Lazer","Luz","Mercado","Moradia","Netflix","Piscina","Preta","Remédio","Seguro Vida","Sepal","Shopee","Telefone","Unimed","Outros"].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+const ORC_C=["Água","Almoços","Assinaturas","Celular","Clube","Comer Fora","Diarista","Educação","Escola Liza","Extra","Gasolina","iFood","INSS","Internet","Investimentos","Jardim","Lazer","Luz","Mercado","Moradia","Netflix","Piscina","Preta","Remédio","Seguro Vida","Sepal","Shopee","Telefone","Unimed","Outros"].sort((a,b)=>a.localeCompare(b,"pt-BR"));
 const ORC_REC=["Salário","Honorários","Outros"];
-const AUTO_FIXO=["Água","Luz","Internet","Telefone","Unimed","Diarista","Clube","Educação","Preta","Gasolina","Jardim","Seguro Vida","Piscina","Assinaturas","Sepal","INSS"];
-const ORC_F=[{key:"data",label:"Data",type:"date"},{key:"tipo",label:"Tipo",type:"select",options:["Despesa","Receita"]},{key:"categoria",label:"Categoria",type:"select",options:ORC_C,dynamicOptions:true},{key:"descricao",label:"Descrição",showWhen:"categoria=Outros"},{key:"valor",label:"Valor",type:"number",step:"0.01"},{key:"fixo",label:"Gasto Fixo",type:"checkbox",checkLabel:"Gasto fixo mensal",showWhen:"tipo=Despesa"}];
+const AUTO_FIXO=["Água","Luz","Internet","Telefone","Unimed","Diarista","Clube","Educação","Escola Liza","Preta","Gasolina","Jardim","Seguro Vida","Piscina","Assinaturas","Sepal","INSS","Mercado"];
+const ORC_F=[{key:"data",label:"Data",type:"date"},{key:"tipo",label:"Tipo",type:"select",options:["Despesa","Receita"]},{key:"categoria",label:"Categoria",type:"select",options:ORC_C,dynamicOptions:true},{key:"descricao",label:"Descrição",placeholder:"Opcional"},{key:"valor",label:"Valor",type:"number",step:"0.01"},{key:"fixo",label:"Gasto Fixo",type:"checkbox",checkLabel:"Gasto fixo mensal",showWhen:"tipo=Despesa"}];
 function OrcTab({data,setData}){const P=useT();const S=useS();
   const{sb:orcSb,sd:orcSd,onS:orcOnS,doS:orcDoS}=useSort("valor","desc");
   const[mF,setMF]=useState(()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
   const[modal,setModal]=useState(null);const[del,setDel]=useState(null);const[sub,setSub]=useState("visao");
   const[repCats,setRepCats]=useState([]);const[repMonths,setRepMonths]=useState([]);const[hoverPt,setHoverPt]=useState(null);
+  const[pieFilter,setPieFilter]=useState(null);
+  // 7. Auto-copy fixed expenses from previous month if current month is empty
+  useEffect(()=>{
+    const thisM=mF;const fl2=data.filter(i=>i.data&&i.data.startsWith(thisM));
+    if(fl2.length===0){
+      const[y,m]=thisM.split("-").map(Number);const prev=new Date(y,m-2,1);const prevM=`${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,"0")}`;
+      const fixedPrev=data.filter(i=>i.data&&i.data.startsWith(prevM)&&i.fixo&&i.tipo!=="Receita");
+      if(fixedPrev.length>0){
+        const copied=fixedPrev.map(i=>({...i,id:uid(),data:thisM+i.data.slice(7)}));
+        setData(prev=>[...prev,...copied]);
+      }
+    }
+  },[mF]);
   // Credit card import state
   const[showImport,setShowImport]=useState(false);const[importItems,setImportItems]=useState([]);
   const[catMap,setCatMap]=useState(()=>ld("ip8-catMap",{}));
@@ -520,7 +533,7 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
             let dt=parts[0].trim(),desc=parts[1].trim(),val=parts[parts.length-1].trim().replace(/[^\d.,-]/g,"").replace(",",".");
             // Try dd/mm/yyyy format
             const dm=dt.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);if(dm)dt=`${dm[3]}-${dm[2]}-${dm[1]}`;
-            const v=Math.abs(Number(val));if(v>0&&desc){
+            const v=Math.abs(Number(val));if(v>0&&desc&&!desc.toUpperCase().includes('PAGAMENTO RECEBIDO')){
               const mapped=catMap[desc.toUpperCase()]||guessCategory(desc);
               items.push({id:uid(),data:dt,tipo:"Despesa",categoria:mapped,descricao:desc,valor:v.toFixed(2),fixo:AUTO_FIXO.includes(mapped),original:desc});
             }
@@ -546,8 +559,8 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
     };reader.readAsText(file);
   };
   const guessCategory=desc=>{const d=desc.toUpperCase();
-    if(d.includes("MERCADO")||d.includes("SUPERMERCADO")||d.includes("ATACADAO")||d.includes("CONDOR")||d.includes("MUFFATO")||d.includes("MUFFATAO")||d.includes("IRANI")||d.includes("FESTVAL")||d.includes("BEAL"))return"Mercado";
-    if(d.includes("IFOOD")||d.includes("RAPPI")||d.includes("RITTER"))return"iFood";
+    if(d.includes("MERCADO")||d.includes("SUPERMERCADO")||d.includes("ATACADAO")||d.includes("CONDOR")||d.includes("MUFFATO")||d.includes("MUFFATAO")||d.includes("IRANI")||d.includes("FESTVAL")||d.includes("BEAL")||d.includes("COMERCIAL"))return"Mercado";
+    if(d.includes("IFOOD")||d.includes("RAPPI")||d.includes("RITTER")||d.includes("IFD"))return"iFood";
     if(d.includes("GASOLINA")||d.includes("COMBUSTIVEL")||d.includes("POSTO")||d.includes("SHELL"))return"Gasolina";
     if(d.includes("FARMACIA")||d.includes("DROGARIA")||d.includes("REMEDIO"))return"Remédio";
     if(d.includes("NETFLIX")||d.includes("SPOTIFY")||d.includes("DISNEY")||d.includes("PRIME")||d.includes("YOUTUBE"))return"Assinaturas";
@@ -630,7 +643,7 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
 
     {sub==="relatorio"?(<div>
       <div style={S.card}>
-        <div style={{fontSize:14,fontWeight:700,marginBottom:16}}>Relatório Comparativo</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><div style={{fontSize:14,fontWeight:700}}>Relatório Comparativo</div><div style={{display:"flex",gap:8}}><button style={S.btnO} onClick={()=>{setRepCats([]);setRepMonths([]);}}>Limpar Tudo</button><button style={S.btnO} onClick={()=>setRepMonths([...allMonths])}>Selecionar Todo Período</button></div></div>
         <div style={{marginBottom:16}}>
           <div style={{fontSize:11,fontWeight:600,color:P.textDim,marginBottom:8}}>Categorias:</div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{allCats.map(c=>(<label key={c} style={{display:"flex",alignItems:"center",gap:4,fontSize:12,cursor:"pointer",padding:"4px 8px",background:repCats.includes(c)?P.accentGlow:P.surfaceAlt,border:`1px solid ${repCats.includes(c)?P.accent:P.border}`,borderRadius:6}}><input type="checkbox" checked={repCats.includes(c)} onChange={e=>{if(e.target.checked)setRepCats([...repCats,c]);else setRepCats(repCats.filter(x=>x!==c));}}/>{c}</label>))}</div>
@@ -672,7 +685,8 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:14,marginBottom:24}}><SC label="Receitas" value={fmt(rec)} color={P.accent} dim={P.accentGlow}/><SC label="Despesas" value={fmt(desp)} color={P.red} dim={P.redDim}/><SC label="Saldo" value={fmt(sal)} color={sal>=0?P.accent:P.red} dim={sal>=0?P.accentGlow:P.redDim}/><SC label="Gastos Fixos" value={fmt(despFixo)} color={P.blue} dim={P.blueDim}/><SC label="Gastos Eventuais" value={fmt(despVar)} color={P.orange} dim={P.orangeDim}/></div>
     {(rec>0||desp>0)&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:20}}>
       {(rec>0&&desp>0)&&<div style={{...S.card,padding:24}}><div style={{fontSize:13,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Receita vs Despesa</div><Pie data={pieRecDesp} size={200}/></div>}
-      {desp>0&&<div style={{...S.card,padding:24}}><div style={{fontSize:13,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Por Categoria</div><Pie data={pieData}/></div>}
+      {desp>0&&<div style={{...S.card,padding:24}}><div style={{fontSize:13,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Por Categoria</div><Pie data={pieData}/><div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:14}}>{pieData.map(d=>(<button key={d.label} onClick={()=>setPieFilter(pieFilter===d.label?null:d.label)} style={{display:"flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:6,border:pieFilter===d.label?`2px solid ${d.color}`:`1px solid ${P.border}`,background:pieFilter===d.label?d.color+"18":P.surfaceAlt,cursor:"pointer",fontSize:10,fontWeight:pieFilter===d.label?700:400,color:P.text,fontFamily:"inherit"}}><div style={{width:8,height:8,borderRadius:"50%",background:d.color}}/>{d.label} ({fmt(d.value)})</button>))}</div></div>}
+    {pieFilter&&(<div style={{...S.card,marginBottom:0}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:12,fontWeight:700}}>Detalhamento: {pieFilter}</div><button style={{background:"transparent",border:"none",color:P.textMuted,cursor:"pointer",fontSize:12,fontFamily:"inherit"}} onClick={()=>setPieFilter(null)}>✕ Fechar</button></div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr><th style={S.th}>Data</th><th style={S.th}>Descrição</th><th style={S.th}>Valor</th></tr></thead><tbody>{fl.filter(i=>i.tipo!=="Receita"&&(i.categoria||"Outros")===pieFilter).sort((a,b)=>(Number(b.valor)||0)-(Number(a.valor)||0)).map(i=>(<tr key={i.id}><td style={S.td}>{fD(i.data)}</td><td style={S.td}>{i.descricao||"—"}</td><td style={{...S.td,fontWeight:600,color:P.red}}>{fmt(i.valor)}</td></tr>))}</tbody></table></div></div>)}
       {desp>0&&<div style={{...S.card,padding:24}}><div style={{fontSize:13,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Fixos vs Eventuais</div><Pie data={pieFixVar} size={200}/></div>}
     </div>)}
     {sF.length>0&&(<div style={{...S.card,padding:0,overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr><STH label="Data" field="data" sb={orcSb} sd={orcSd} onS={orcOnS} style={S.th}/><STH label="Tipo" field="tipo" sb={orcSb} sd={orcSd} onS={orcOnS} style={S.th}/><STH label="Categoria" field="categoria" sb={orcSb} sd={orcSd} onS={orcOnS} style={S.th}/><STH label="Descrição" field="descricao" sb={orcSb} sd={orcSd} onS={orcOnS} style={S.th}/><STH label="Valor" field="valor" sb={orcSb} sd={orcSd} onS={orcOnS} style={S.th}/><STH label="Fixo" field="fixo" sb={orcSb} sd={orcSd} onS={orcOnS} style={S.th}/><th style={S.th}></th></tr></thead><tbody>{sF.map(i=>(<TR key={i.id} onClick={()=>setModal(i)}><td style={S.td}>{fD(i.data)}</td><td style={S.td}><span style={S.tag(i.tipo==="Receita"?P.accent:P.red,i.tipo==="Receita"?P.accentGlow:P.redDim)}>{i.tipo||"Despesa"}</span></td><td style={S.td}>{i.categoria||"—"}</td><td style={S.td}>{i.descricao||"—"}</td><td style={{...S.td,fontWeight:600,color:i.tipo==="Receita"?P.accent:P.red}}>{fmt(i.valor)}</td><td style={S.td}>{i.fixo?<span style={S.tag(P.blue,P.blueDim)}>Fixo</span>:"—"}</td><td style={S.td}><button style={{background:"transparent",border:"none",color:P.textMuted,cursor:"pointer",fontSize:16,fontFamily:"inherit"}} onClick={e=>{e.stopPropagation();setDel(i.id);}}>✕</button></td></TR>))}</tbody></table></div>)}
@@ -1180,6 +1194,47 @@ function PrfTab({prfRef}){const P=useT();const S=useS();const[sub,setSub]=useSta
   </div>);
 }
 
+/* TESOURO DIRETO TAB */
+function TDTab({apos,setApos,liza,setLiza}){const P=useT();const S=useS();const[sub,setSub]=useState("apos");const[modal,setModal]=useState(null);const[del,setDel]=useState(null);
+  const activeData=sub==="apos"?apos:liza;const setActive=sub==="apos"?setApos:setLiza;
+  const total=activeData.reduce((a,i)=>a+(Number(i.valor)||0),0);
+  const sorted=[...activeData].sort((a,b)=>(a.data||"").localeCompare(b.data||""));
+  const doSave=item=>{const out={...item,id:item.id||uid()};setActive(p=>{const i=p.findIndex(x=>x.id===out.id);if(i>=0){const n=[...p];n[i]=out;return n;}return[...p,out];});setModal(null);};
+  const handleCSV=e=>{const file=e.target.files[0];if(!file)return;const reader=new FileReader();
+    reader.onload=ev=>{const lines=ev.target.result.split("\n").filter(l=>l.trim());const items=[];
+      lines.forEach((line,idx)=>{if(idx===0&&line.toLowerCase().includes("data"))return;
+        const parts=line.split(/[;,\t]/);if(parts.length>=2){
+          let dt=parts[0].trim(),val=parts[1].trim().replace(/[^\d.,-]/g,"").replace(",",".");
+          const dm=dt.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);if(dm)dt=`${dm[3]}-${dm[2]}-${dm[1]}`;
+          const v=Math.abs(Number(val));if(v>0)items.push({id:uid(),data:dt,valor:v.toFixed(2)});
+        }
+      });
+      if(items.length>0){setActive(p=>[...p,...items]);alert(`${items.length} registros importados`);}
+    };reader.readAsText(file);e.target.value="";
+  };
+  return(<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28,flexWrap:"wrap",gap:8}}>
+      <div style={{fontSize:22,fontWeight:700}}>Tesouro Direto</div>
+      <div style={{display:"flex",gap:8}}>
+        <button style={sub==="apos"?S.btn():S.btnO} onClick={()=>setSub("apos")}>Aposentadoria</button>
+        <button style={sub==="liza"?S.btn():S.btnO} onClick={()=>setSub("liza")}>Faculdade Liza</button>
+        <button style={S.btn()} onClick={()=>setModal("new")}>+ Novo</button>
+        <label style={{...S.btnO,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><input type="file" accept=".csv,.txt" style={{display:"none"}} onChange={handleCSV}/>📎 Importar CSV</label>
+      </div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:24}}>
+      <SC label={sub==="apos"?"Total Aposentadoria":"Total Faculdade Liza"} value={fmt(total)} color={P.accent} dim={P.accentGlow}/>
+      <SC label="Registros" value={String(activeData.length)} color={P.blue} dim={P.blueDim}/>
+    </div>
+    {sorted.length>0?(<div style={{...S.card,padding:0,overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+      <thead><tr><th style={S.th}>Data</th><th style={S.th}>Valor</th><th style={S.th}>Acumulado</th><th style={S.th}></th></tr></thead>
+      <tbody>{(()=>{let acc=0;return sorted.map(i=>{acc+=(Number(i.valor)||0);return(<TR key={i.id} onClick={()=>setModal(i)}><td style={S.td}>{fD(i.data)}</td><td style={{...S.td,fontWeight:600}}>{fmt(i.valor)}</td><td style={{...S.td,color:P.accent}}>{fmt(acc)}</td><td style={S.td}><button style={{background:"transparent",border:"none",color:P.textMuted,cursor:"pointer",fontSize:16,fontFamily:"inherit"}} onClick={e=>{e.stopPropagation();setDel(i.id);}}>✕</button></td></TR>);});})()}</tbody>
+    </table></div>):(<div style={{textAlign:"center",padding:60,color:P.textMuted}}>Nenhum registro. Adicione manualmente ou importe CSV.</div>)}
+    {modal&&<Mdl title={modal==="new"?"Novo":"Editar"} fields={[{key:"data",label:"Data",type:"date"},{key:"valor",label:"Valor (R$)",type:"number",step:"0.01"}]} initial={modal==="new"?{data:new Date().toISOString().slice(0,10)}:modal} onSave={doSave} onCancel={()=>setModal(null)}/>}
+    {del&&<Cfm msg="Excluir?" onOk={()=>{setActive(p=>p.filter(x=>x.id!==del));setDel(null);}} onNo={()=>setDel(null)}/>}
+  </div>);
+}
+
 /* IMÓVEIS TAB — with real estate indices + fetch */
 function ImoveisTab(){const P=useT();const S=useS();
   const[incc,setIncc]=useState("—");const[fipezap,setFipezap]=useState("—");const[loading,setLoading]=useState(false);
@@ -1404,14 +1459,15 @@ export default function App(){
   const[banks,setBanks]=useState(()=>ld(SK.banks,DBANKS));const[apMeta,setApMeta]=useState(()=>ld(SK.apMeta,0));
   const[fiiMkt,setFiiMkt]=useState(()=>ld(SK.fiiMkt,FII_MKT_DEF));
   const[evo,setEvo]=useState(()=>ld(SK.evo,[]));
+  const[tdApos,setTdApos]=useState(()=>ld(SK.tdApos,[]));const[tdLiza,setTdLiza]=useState(()=>ld(SK.tdLiza,[]));
   useEffect(()=>{if(userId)loadFromFirestore(userId);},[]);
-  const loadFromFirestore=async(uid)=>{try{setSyncStatus("Sincronizando...");const snap=await getDoc(doc(db,"investpro",uid));if(snap.exists()){const d=snap.data();if(d.rf)setRf(d.rf);if(d.inco)setInco(d.inco);if(d.ac)setAc(d.ac);if(d.etfs)setEtfs(d.etfs);if(d.fiis)setFiis(d.fiis);if(d.cr)setCr(d.cr);if(d.indices)setIndices(d.indices);if(d.aportes)setAportes(d.aportes);if(d.orc)setOrc(d.orc);if(d.banks)setBanks(d.banks);if(d.apMeta!=null)setApMeta(d.apMeta);if(d.fiiMkt)setFiiMkt(d.fiiMkt);if(d.evo)setEvo(d.evo);if(d.theme!=null)setIsDark(d.theme);if(d.font)setFont(d.font);if(d.prfRef)setPrfRef(d.prfRef);}setSyncStatus("\u2713 Sincronizado");setTimeout(()=>setSyncStatus(""),3000);}catch(e){console.error(e);setSyncStatus("Erro sync");}};
-  const saveTimer=useRef(null);const saveToFirestore=useCallback(()=>{if(!userId)return;if(saveTimer.current)clearTimeout(saveTimer.current);saveTimer.current=setTimeout(async()=>{try{await setDoc(doc(db,"investpro",userId),{rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,theme:isDark,font,prfRef,updatedAt:new Date().toISOString()},{merge:true});}catch(e){console.error(e);}},2000);},[userId,rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,isDark,font,prfRef]);
-  useEffect(()=>{sv(SK.theme,isDark);},[isDark]);useEffect(()=>{sv("ip8-font",font);},[font]);useEffect(()=>{sv(SK.rf,rf);},[rf]);useEffect(()=>{sv(SK.inco,inco);},[inco]);useEffect(()=>{sv(SK.ac,ac);},[ac]);useEffect(()=>{sv(SK.etf,etfs);},[etfs]);useEffect(()=>{sv(SK.fii,fiis);},[fiis]);useEffect(()=>{sv(SK.cr,cr);},[cr]);useEffect(()=>{sv(SK.ind,indices);},[indices]);useEffect(()=>{sv(SK.ap,aportes);},[aportes]);useEffect(()=>{sv(SK.orc,orc);},[orc]);useEffect(()=>{sv(SK.banks,banks);},[banks]);useEffect(()=>{sv(SK.apMeta,apMeta);},[apMeta]);useEffect(()=>{sv(SK.fiiMkt,fiiMkt);},[fiiMkt]);useEffect(()=>{sv(SK.evo,evo);},[evo]);useEffect(()=>{sv(SK.prfRef,prfRef);},[prfRef]);
-  useEffect(()=>{if(userId)saveToFirestore();},[rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,isDark,font,prfRef,saveToFirestore]);
+  const loadFromFirestore=async(uid)=>{try{setSyncStatus("Sincronizando...");const snap=await getDoc(doc(db,"investpro",uid));if(snap.exists()){const d=snap.data();if(d.rf)setRf(d.rf);if(d.inco)setInco(d.inco);if(d.ac)setAc(d.ac);if(d.etfs)setEtfs(d.etfs);if(d.fiis)setFiis(d.fiis);if(d.cr)setCr(d.cr);if(d.indices)setIndices(d.indices);if(d.aportes)setAportes(d.aportes);if(d.orc)setOrc(d.orc);if(d.banks)setBanks(d.banks);if(d.apMeta!=null)setApMeta(d.apMeta);if(d.fiiMkt)setFiiMkt(d.fiiMkt);if(d.evo)setEvo(d.evo);if(d.tdApos)setTdApos(d.tdApos);if(d.tdLiza)setTdLiza(d.tdLiza);if(d.theme!=null)setIsDark(d.theme);if(d.font)setFont(d.font);if(d.prfRef)setPrfRef(d.prfRef);}setSyncStatus("\u2713 Sincronizado");setTimeout(()=>setSyncStatus(""),3000);}catch(e){console.error(e);setSyncStatus("Erro sync");}};
+  const saveTimer=useRef(null);const saveToFirestore=useCallback(()=>{if(!userId)return;if(saveTimer.current)clearTimeout(saveTimer.current);saveTimer.current=setTimeout(async()=>{try{await setDoc(doc(db,"investpro",userId),{rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,theme:isDark,font,prfRef,updatedAt:new Date().toISOString()},{merge:true});}catch(e){console.error(e);}},2000);},[userId,rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,isDark,font,prfRef]);
+  useEffect(()=>{sv(SK.theme,isDark);},[isDark]);useEffect(()=>{sv("ip8-font",font);},[font]);useEffect(()=>{sv(SK.rf,rf);},[rf]);useEffect(()=>{sv(SK.inco,inco);},[inco]);useEffect(()=>{sv(SK.ac,ac);},[ac]);useEffect(()=>{sv(SK.etf,etfs);},[etfs]);useEffect(()=>{sv(SK.fii,fiis);},[fiis]);useEffect(()=>{sv(SK.cr,cr);},[cr]);useEffect(()=>{sv(SK.ind,indices);},[indices]);useEffect(()=>{sv(SK.ap,aportes);},[aportes]);useEffect(()=>{sv(SK.orc,orc);},[orc]);useEffect(()=>{sv(SK.banks,banks);},[banks]);useEffect(()=>{sv(SK.apMeta,apMeta);},[apMeta]);useEffect(()=>{sv(SK.fiiMkt,fiiMkt);},[fiiMkt]);useEffect(()=>{sv(SK.evo,evo);},[evo]);useEffect(()=>{sv(SK.prfRef,prfRef);},[prfRef]);useEffect(()=>{sv(SK.tdApos,tdApos);},[tdApos]);useEffect(()=>{sv(SK.tdLiza,tdLiza);},[tdLiza]);
+  useEffect(()=>{if(userId)saveToFirestore();},[rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,isDark,font,prfRef,saveToFirestore]);
   useEffect(()=>{const c=ld(SK.rates,null);if(c)RATES=c;},[]);
-  const allState=()=>({rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,theme:isDark,prfRef,font});
-  const loadState=d=>{if(d.rf)setRf(d.rf);if(d.inco)setInco(d.inco);if(d.ac)setAc(d.ac);if(d.etfs)setEtfs(d.etfs);if(d.fiis)setFiis(d.fiis);if(d.cr)setCr(d.cr);if(d.indices)setIndices(d.indices);if(d.aportes)setAportes(d.aportes);if(d.orc)setOrc(d.orc);if(d.banks)setBanks(d.banks);if(d.apMeta!=null)setApMeta(d.apMeta);if(d.fiiMkt)setFiiMkt(d.fiiMkt);if(d.evo)setEvo(d.evo);if(d.theme!=null)setIsDark(d.theme);if(d.prfRef)setPrfRef(d.prfRef);};
+  const allState=()=>({rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,theme:isDark,prfRef,font});
+  const loadState=d=>{if(d.rf)setRf(d.rf);if(d.inco)setInco(d.inco);if(d.ac)setAc(d.ac);if(d.etfs)setEtfs(d.etfs);if(d.fiis)setFiis(d.fiis);if(d.cr)setCr(d.cr);if(d.indices)setIndices(d.indices);if(d.aportes)setAportes(d.aportes);if(d.orc)setOrc(d.orc);if(d.banks)setBanks(d.banks);if(d.apMeta!=null)setApMeta(d.apMeta);if(d.fiiMkt)setFiiMkt(d.fiiMkt);if(d.evo)setEvo(d.evo);if(d.tdApos)setTdApos(d.tdApos);if(d.tdLiza)setTdLiza(d.tdLiza);if(d.theme!=null)setIsDark(d.theme);if(d.prfRef)setPrfRef(d.prfRef);};
   const P=isDark==="dark"||isDark===true?DARK:isDark==="industrial"?INDUSTRIAL:isDark==="planner"?PLANNER:isDark==="industrial-light"?INDUSTRIAL_LIGHT:LIGHT;
   const[clock,setClock]=useState("");const[todayStr,setTodayStr]=useState("");const[weekDay,setWeekDay]=useState("");
   useEffect(()=>{const t=setInterval(()=>{const n=new Date();setClock(n.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}));setTodayStr(n.toLocaleDateString("pt-BR"));setWeekDay(n.toLocaleDateString("pt-BR",{weekday:"long"}));},1000);return()=>clearInterval(t);},[]);
@@ -1426,7 +1482,7 @@ export default function App(){
   const _dFi=fiis.reduce((a,i)=>a+(Number(i.dividendoMensal)||0),0);
   const _tG=rf.reduce((a,i)=>a+(Number(i.valor)||0),0)+inco.reduce((a,i)=>a+(Number(i.valor)||0),0)+ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+etfs.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+cr.reduce((a,i)=>a+(Number(i.valorInvestido)||0),0);
   const _tRM=_mRF+_mIN+_dFi;const _retPct=_tG>0?((_tRM/_tG)*100):0;
-  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rf} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc}/>;case"comp":return<CompTab/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rf} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef}/>;case"imoveis":return<ImoveisTab/>;case"cfg":return<CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/>;default:return null;}};
+  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rf} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc}/>;case"comp":return<CompTab/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"td":return<TDTab apos={tdApos} setApos={setTdApos} liza={tdLiza} setLiza={setTdLiza}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rf} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef}/>;case"imoveis":return<ImoveisTab/>;case"cfg":return<CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/>;default:return null;}};
   const isDarkSidebar=P.sidebarBg&&parseInt(P.sidebarBg.replace("#",""),16)<0x888888;
   const sbText=isDarkSidebar?"#e8e0d6":P.text;const sbTextDim=isDarkSidebar?"#a09890":P.textDim;const sbTextMuted=isDarkSidebar?"#6b635a":P.textMuted;const sbHover=isDarkSidebar?"rgba(255,255,255,0.08)":P.hover;const sbAccentGlow=isDarkSidebar?"rgba(196,98,42,0.20)":P.accentGlow;
   function SBItem({t}){const[h,setH]=useState(false);const active=tab===t.id;return(<div onClick={()=>setTab(t.id)} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 16px",cursor:"pointer",fontSize:12,fontWeight:active?600:400,color:active?P.accent:h?sbText:sbTextDim,background:active?sbAccentGlow:h?sbHover:"transparent",borderRight:active?`2px solid ${P.accent}`:"2px solid transparent",transition:"all 0.2s ease",borderRadius:h&&!active?"6px 0 0 6px":"0",transform:h&&!active?"translateX(4px)":"none"}}><span style={{fontSize:14,opacity:active?1:h?1:0.7,transition:"all 0.2s ease"}}>{t.ic}</span>{t.l}</div>);}

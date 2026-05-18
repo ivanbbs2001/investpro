@@ -290,8 +290,15 @@ const RF_C=[{k:"dataInicio",l:"Data"},{k:"dataVencimento",l:"Venc."},{k:"tipo",l
 function RFTab({data,setData,banks,dashRetPct}){const P=useT();const S=useS();const[sub,setSub]=useState("lista");const{sb,sd,onS,doS}=useSort("dataVencimento","asc");const[rebalVal,setRebalVal]=useState("");
   const[slIPCA,setSlIPCA]=useState(45);const[slCDI,setSlCDI]=useState(30);const[slPre,setSlPre]=useState(25);
   const[aporteProj,setAporteProj]=useState("");const[hovProj1,setHovProj1]=useState(null);const[hovProj2,setHovProj2]=useState(null);
-  const enriched=data.map(i=>({...i,...calcRF(i)}));const sorted=doS(enriched);
-  const tV=enriched.reduce((a,i)=>a+(Number(i.valor)||0),0),tRA=enriched.reduce((a,i)=>a+(Number(i.rendAnual)||0),0),tRL=enriched.reduce((a,i)=>a+(Number(i.rendLiq)||0),0),tRM=enriched.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
+  const[rfFiltroTipo,setRfFiltroTipo]=useState("");const[rfFiltroIdx,setRfFiltroIdx]=useState("");
+  const enriched=data.map(i=>({...i,...calcRF(i)}));
+  const filtered=enriched.filter(i=>{if(rfFiltroTipo&&i.tipo!==rfFiltroTipo)return false;if(rfFiltroIdx&&i.indexador!==rfFiltroIdx)return false;return true;});
+  const sorted=doS(filtered);
+  const tiposUnicos=[...new Set(data.map(i=>i.tipo).filter(Boolean))].sort();
+  const idxUnicos=[...new Set(data.map(i=>i.indexador).filter(Boolean))].sort();
+  const tV=filtered.reduce((a,i)=>a+(Number(i.valor)||0),0),tRA=filtered.reduce((a,i)=>a+(Number(i.rendAnual)||0),0),tRL=filtered.reduce((a,i)=>a+(Number(i.rendLiq)||0),0),tRM=filtered.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
+  const mediaValor=filtered.length>0?tV/filtered.length:0;
+  const mediaTaxaNom=filtered.length>0?(filtered.reduce((a,i)=>a+(Number(i.taxaNom)||0),0)/filtered.length):0;
   const v30=data.filter(i=>diasV(i.dataVencimento)<=30),v180=data.filter(i=>{const d=diasV(i.dataVencimento);return d>30&&d<=180;}),vP=data.filter(i=>diasV(i.dataVencimento)>180);
   const[modal,setModal]=useState(null);const[del,setDel]=useState(null);
   const doSave=item=>{const c=calcRF(item);const out={...item,...c,id:item.id||uid()};setData(p=>{const i=p.findIndex(x=>x.id===out.id);if(i>=0){const n=[...p];n[i]=out;return n;}return[...p,out];});setModal(null);};
@@ -303,6 +310,13 @@ function RFTab({data,setData,banks,dashRetPct}){const P=useT();const S=useS();co
 
   return(<div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:8}}><div style={{fontSize:22,fontWeight:700}}>Renda Fixa</div><div style={{display:"flex",gap:8}}><button style={sub==="lista"?S.btnA():S.btnO} onClick={()=>setSub("lista")}>Lista</button><button style={sub==="venc"?S.btnA():S.btnO} onClick={()=>setSub("venc")}>Vencimentos</button><button style={sub==="graf"?S.btnA():S.btnO} onClick={()=>setSub("graf")}>Gráficos</button><button style={S.btn()} onClick={()=>setModal("new")}>+ Novo</button></div></div>
+    {sub==="lista"&&(<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
+      <span style={{fontSize:11,color:P.textDim}}>Filtrar:</span>
+      <select style={{...S.sel,width:"auto",minWidth:100,fontSize:11}} value={rfFiltroTipo} onChange={e=>setRfFiltroTipo(e.target.value)}><option value="">Todos Tipos</option>{tiposUnicos.map(t=><option key={t} value={t}>{t}</option>)}</select>
+      <select style={{...S.sel,width:"auto",minWidth:100,fontSize:11}} value={rfFiltroIdx} onChange={e=>setRfFiltroIdx(e.target.value)}><option value="">Todos Indexadores</option>{idxUnicos.map(t=><option key={t} value={t}>{t}</option>)}</select>
+      {(rfFiltroTipo||rfFiltroIdx)&&<button style={{background:"transparent",border:"none",color:P.red,cursor:"pointer",fontSize:11,fontFamily:"inherit"}} onClick={()=>{setRfFiltroTipo("");setRfFiltroIdx("");}}>✕ Limpar</button>}
+      {(rfFiltroTipo||rfFiltroIdx)&&<span style={{fontSize:11,color:P.accent,fontWeight:600}}>{filtered.length} títulos · Média valor: {fmt(mediaValor)} · Média taxa nom: {mediaTaxaNom.toFixed(2)}%</span>}
+    </div>)}
     <div style={{fontSize:12,color:P.textDim,marginBottom:12}}>CDI 12m: {RATES.cdi12m.toFixed(2)}% · IPCA 12m: {RATES.ipca12m.toFixed(2)}%</div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14,marginBottom:24}}><SC label="Investido" value={fmt(tV)} color={P.blue} dim={P.blueDim}/><SC label="Rend.Anual" value={fmt(tRA)} color={P.accent} dim={P.accentGlow}/><SC label="Rend.Líq.Anual" value={fmt(tRL)} color={P.cyan} dim={P.cyanDim}/><SC label="Rend.Mensal" value={fmt(tRM)} color={P.accent} dim={P.accentGlow}/><SC label="Retorno Mensal" value={tV>0?fP((tRM/tV)*100):"—"} color={P.yellow} dim={P.yellowDim}/></div>
     <RFMediaPanel data={data}/>
@@ -406,8 +420,15 @@ const IN_C=[{k:"dataInicio",l:"Data"},{k:"dataVencimento",l:"Venc."},{k:"risco",
 const IDX_COLORS={CDI:{c:"#3b82f6",bg:"rgba(59,130,246,0.12)"},IPCA:{c:"#f59e0b",bg:"rgba(245,158,11,0.12)"},Pré:{c:"#a855f7",bg:"rgba(168,85,247,0.12)"},IGPM:{c:"#06b6d4",bg:"rgba(6,182,212,0.12)"},INCC:{c:"#ec4899",bg:"rgba(236,72,153,0.12)"},Selic:{c:"#3b82f6",bg:"rgba(59,130,246,0.12)"},"Dólar":{c:"#10b981",bg:"rgba(16,185,129,0.12)"},Outro:{c:"#64748b",bg:"rgba(100,116,139,0.12)"}};
 const RISCO_COLORS={A:{c:"#10b981",bg:"rgba(16,185,129,0.12)"},B:{c:"#3b82f6",bg:"rgba(59,130,246,0.12)"},C:{c:"#f59e0b",bg:"rgba(245,158,11,0.12)"},D:{c:"#f97316",bg:"rgba(249,115,22,0.12)"},E:{c:"#ef4444",bg:"rgba(239,68,68,0.12)"}};
 function IncoTab({data,setData}){const P=useT();const S=useS();const[sub,setSub]=useState("lista");const{sb,sd,onS,doS}=useSort("dataVencimento","asc");
-  const enriched=data.map(i=>({...i,...calcINCO(i)}));const sorted=doS(enriched);
-  const tV=enriched.reduce((a,i)=>a+(Number(i.valor)||0),0),tRP=enriched.reduce((a,i)=>a+(Number(i.rendPeriodo)||0),0),tRM=enriched.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
+  const[inFiltroIdx,setInFiltroIdx]=useState("");const[inFiltroRisco,setInFiltroRisco]=useState("");
+  const enriched=data.map(i=>({...i,...calcINCO(i)}));
+  const filtered=enriched.filter(i=>{if(inFiltroIdx&&i.indexador!==inFiltroIdx)return false;if(inFiltroRisco&&i.risco!==inFiltroRisco)return false;return true;});
+  const sorted=doS(filtered);
+  const idxUnicosIn=[...new Set(data.map(i=>i.indexador).filter(Boolean))].sort();
+  const riscoUnicosIn=[...new Set(data.map(i=>i.risco).filter(Boolean))].sort();
+  const tV=filtered.reduce((a,i)=>a+(Number(i.valor)||0),0),tRP=filtered.reduce((a,i)=>a+(Number(i.rendPeriodo)||0),0),tRM=filtered.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
+  const inMediaValor=filtered.length>0?tV/filtered.length:0;
+  const inMediaTaxaNom=filtered.length>0?(filtered.reduce((a,i)=>a+(Number(i.taxaNom)||0),0)/filtered.length):0;
   const v30=data.filter(i=>diasV(i.dataVencimento)<=30),v180=data.filter(i=>{const d=diasV(i.dataVencimento);return d>30&&d<=180;}),vP=data.filter(i=>diasV(i.dataVencimento)>180);
   const[modal,setModal]=useState(null);const[del,setDel]=useState(null);
   const doSave=item=>{const c=calcINCO(item);const out={...item,...c,id:item.id||uid()};setData(p=>{const i=p.findIndex(x=>x.id===out.id);if(i>=0){const n=[...p];n[i]=out;return n;}return[...p,out];});setModal(null);};
@@ -417,6 +438,13 @@ function IncoTab({data,setData}){const P=useT();const S=useS();const[sub,setSub]
   const pieRisco=Object.entries(byRisco).map(([l,v])=>({label:`Risco ${l}`,value:v,color:RISCO_COLORS[l]?RISCO_COLORS[l].c:PC[0]}));
   return(<div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:8}}><div style={{fontSize:22,fontWeight:700}}>INCO</div><div style={{display:"flex",gap:8}}><button style={sub==="lista"?S.btnA():S.btnO} onClick={()=>setSub("lista")}>Lista</button><button style={sub==="venc"?S.btnA():S.btnO} onClick={()=>setSub("venc")}>Vencimentos</button><button style={sub==="graf"?S.btnA():S.btnO} onClick={()=>setSub("graf")}>Gráficos</button><button style={S.btn()} onClick={()=>setModal("new")}>+ Novo</button></div></div>
+    {sub==="lista"&&(<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
+      <span style={{fontSize:11,color:P.textDim}}>Filtrar:</span>
+      <select style={{...S.sel,width:"auto",minWidth:100,fontSize:11}} value={inFiltroIdx} onChange={e=>setInFiltroIdx(e.target.value)}><option value="">Todos Indexadores</option>{idxUnicosIn.map(t=><option key={t} value={t}>{t}</option>)}</select>
+      <select style={{...S.sel,width:"auto",minWidth:80,fontSize:11}} value={inFiltroRisco} onChange={e=>setInFiltroRisco(e.target.value)}><option value="">Todos Riscos</option>{riscoUnicosIn.map(t=><option key={t} value={t}>{t}</option>)}</select>
+      {(inFiltroIdx||inFiltroRisco)&&<button style={{background:"transparent",border:"none",color:P.red,cursor:"pointer",fontSize:11,fontFamily:"inherit"}} onClick={()=>{setInFiltroIdx("");setInFiltroRisco("");}}>✕ Limpar</button>}
+      {(inFiltroIdx||inFiltroRisco)&&<span style={{fontSize:11,color:P.accent,fontWeight:600}}>{filtered.length} investimentos · Média valor: {fmt(inMediaValor)} · Média taxa nom: {inMediaTaxaNom.toFixed(2)}%</span>}
+    </div>)}
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14,marginBottom:24}}><SC label="Investido" value={fmt(tV)} color={P.cyan} dim={P.cyanDim}/><SC label="Rend.Período" value={fmt(tRP)} color={P.accent} dim={P.accentGlow}/><SC label="Rend.Mensal" value={fmt(tRM)} color={P.accent} dim={P.accentGlow}/><SC label="Retorno Mensal" value={tV>0?fP((tRM/tV)*100):"—"} color={P.yellow} dim={P.yellowDim}/></div>
     {sub==="graf"&&data.length>0&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
       <div style={{...S.card,padding:24}}><div style={{fontSize:13,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Por Indexador</div><Pie data={pieIdx} size={240}/></div>

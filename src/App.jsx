@@ -587,6 +587,42 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
       }));setShowImport(true);
     };reader.readAsText(file);
   };
+  // Bank statement import (PIX, débitos)
+  const IGNORE_EXTRATO=["PAGAMENTO RECEBIDO","PAGAMENTO DE FATURA","PAG FATURA","APLICACAO","RESGATE","TRANSFERENCIA ENTRE","TED ENTRE","RENDIMENTO","IOF","TARIFA","JUROS","SALDO"];
+  const handleExtrato=e=>{const file=e.target.files[0];if(!file)return;const reader=new FileReader();
+    reader.onload=ev=>{const text=ev.target.result;const lines=text.split("\n").filter(l=>l.trim());
+      const items=[];
+      if(file.name.endsWith(".csv")||file.name.endsWith(".txt")){
+        lines.forEach((line,idx)=>{if(idx===0&&(line.toLowerCase().includes("data")||line.toLowerCase().includes("date")||line.toLowerCase().includes("lançamento")))return;
+          const parts=line.split(/[;,\t]/);if(parts.length>=3){
+            let dt=parts[0].trim(),desc="",val=0;
+            if(parts.length>=4){desc=parts[1].trim();const debit=parts[2].trim().replace(/[^\d.,-]/g,"").replace(",",".");const credit=parts[3].trim().replace(/[^\d.,-]/g,"").replace(",",".");val=Math.abs(Number(debit)||0);if(val===0)return;}
+            else{desc=parts[1].trim();val=Math.abs(Number(parts[2].trim().replace(/[^\d.,-]/g,"").replace(",","."))||0);}
+            const dm=dt.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);if(dm)dt=`${dm[3]}-${dm[2]}-${dm[1]}`;
+            const dUp=desc.toUpperCase();if(val<=0||!desc)return;
+            if(IGNORE_EXTRATO.some(ig=>dUp.includes(ig)))return;
+            const mapped=catMap[dUp]||guessCategory(desc);const isPix=dUp.includes("PIX");
+            items.push({id:uid(),data:dt,tipo:"Despesa",categoria:mapped,descricao:(isPix?"PIX: ":"")+desc,valor:val.toFixed(2),fixo:AUTO_FIXO.includes(mapped),original:desc});
+          }
+        });
+      }
+      if(file.name.endsWith(".ofx")){
+        const txns=text.split("<STMTTRN>").slice(1);
+        txns.forEach(txn=>{const getField=(f)=>{const m=txn.match(new RegExp(`<${f}>(.*?)(?:<|\\n)`));return m?m[1].trim():"";};
+          const trnType=getField("TRNTYPE");const dt=getField("DTPOSTED").slice(0,8);const desc=getField("MEMO")||getField("NAME");let val=Number(getField("TRNAMT").replace(",","."));
+          if(!dt||!desc)return;if(val>0&&trnType!=="DEBIT")return;
+          val=Math.abs(val);const fdt=dt.length>=8?`${dt.slice(0,4)}-${dt.slice(4,6)}-${dt.slice(6,8)}`:"";
+          const dUp=desc.toUpperCase();if(IGNORE_EXTRATO.some(ig=>dUp.includes(ig)))return;
+          const mapped=catMap[dUp]||guessCategory(desc);const isPix=dUp.includes("PIX");
+          items.push({id:uid(),data:fdt,tipo:"Despesa",categoria:mapped,descricao:(isPix?"PIX: ":"")+desc,valor:val.toFixed(2),fixo:AUTO_FIXO.includes(mapped),original:desc});
+        });
+      }
+      setImportItems(items.map(item=>{
+        const dup=data.some(d=>d.data===item.data&&Math.abs((Number(d.valor)||0)-(Number(item.valor)||0))<0.01&&(d.descricao||"").toUpperCase()===(item.descricao||"").toUpperCase());
+        return{...item,isDup:dup};
+      }));setShowImport(true);
+    };reader.readAsText(file);e.target.value="";
+  };
   const guessCategory=desc=>{const d=desc.toUpperCase();
     if(d.includes("MERCADO")||d.includes("SUPERMERCADO")||d.includes("ATACADAO")||d.includes("CONDOR")||d.includes("MUFFATO")||d.includes("MUFFATAO")||d.includes("IRANI")||d.includes("FESTVAL")||d.includes("BEAL")||d.includes("COMERCIAL"))return"Mercado";
     if(d.includes("IFOOD")||d.includes("RAPPI")||d.includes("RITTER")||d.includes("IFD"))return"iFood";
@@ -648,7 +684,8 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
         <button style={sub==="relatorio"?S.btnA():S.btnO} onClick={()=>setSub("relatorio")}>Relatório</button>
         <select style={{...S.sel,width:"auto",minWidth:140}} value={mF} onChange={e=>setMF(e.target.value)}>{aM.map(m=><option key={m} value={m}>{mL(m)}</option>)}</select>
         <button style={S.btn()} onClick={()=>setModal("new")}>+ Novo</button>
-        <label style={{...S.btnO,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><input type="file" accept=".csv,.txt,.ofx" style={{display:"none"}} onChange={handleImport}/>📎 Importar Fatura</label>
+        <label style={{...S.btnO,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><input type="file" accept=".csv,.txt,.ofx" style={{display:"none"}} onChange={handleImport}/>📎 Fatura Cartão</label>
+        <label style={{...S.btnO,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><input type="file" accept=".csv,.txt,.ofx" style={{display:"none"}} onChange={handleExtrato}/>🏦 Extrato Banco</label>
       </div>
     </div>
 

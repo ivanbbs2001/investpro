@@ -552,10 +552,11 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
   const[catMap,setCatMap]=useState(()=>ld("ip8-catMap",{}));
   const saveCatMap=m=>{setCatMap(m);sv("ip8-catMap",m);};
   // Parse CSV/OFX credit card statement
-  // PDF text extraction
+  // PDF text extraction via CDN
   const extractPdfText=async(file)=>{
-    const pdfjsLib=await import("pdfjs-dist");
-    pdfjsLib.GlobalWorkerOptions.workerSrc=`https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+    if(!window.pdfjsLib){await new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
+    const pdfjsLib=window.pdfjsLib;
+    pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
     const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;
     let text="";for(let i=1;i<=pdf.numPages;i++){const page=await pdf.getPage(i);const content=await page.getTextContent();
       const lns=[];let lastY=null;content.items.forEach(item=>{if(lastY!==null&&Math.abs(item.transform[5]-lastY)>3){lns.push("\n");}lns.push(item.str);lastY=item.transform[5];});

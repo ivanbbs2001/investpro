@@ -536,13 +536,16 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
   const[repCats,setRepCats]=useState([]);const[repMonths,setRepMonths]=useState([]);const[hoverPt,setHoverPt]=useState(null);
   const[pieFilter,setPieFilter]=useState(null);
   // 7. Auto-copy fixed expenses from previous month if current month is empty
+  // Copies category name only — value is reset to 0 for user to fill in
   useEffect(()=>{
     const thisM=mF;const fl2=data.filter(i=>i.data&&i.data.startsWith(thisM));
     if(fl2.length===0){
       const[y,m]=thisM.split("-").map(Number);const prev=new Date(y,m-2,1);const prevM=`${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,"0")}`;
       const fixedPrev=data.filter(i=>i.data&&i.data.startsWith(prevM)&&i.fixo&&i.tipo!=="Receita");
-      if(fixedPrev.length>0){
-        const copied=fixedPrev.map(i=>({...i,id:uid(),data:thisM+i.data.slice(7)}));
+      // Deduplicate by category (one placeholder per category)
+      const seen=new Set();const unique=fixedPrev.filter(i=>{if(seen.has(i.categoria))return false;seen.add(i.categoria);return true;});
+      if(unique.length>0){
+        const copied=unique.map(i=>({...i,id:uid(),data:thisM+"-01",valor:"",descricao:""}));
         setData(prev=>[...prev,...copied]);
       }
     }

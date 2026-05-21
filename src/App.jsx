@@ -1384,12 +1384,20 @@ function CompTab(){const P=useT();const S=useS();
 }
 
 /* PROJEÇÕES — Aposentadoria Antecipada */
-function ProjecoesTab({tG,tRM,retPct}){const P=useT();const S=useS();
+function ProjecoesTab({tG,tRM,retPct,orc}){const P=useT();const S=useS();
   const[idadeAtual,setIdadeAtual]=useState("40");
   const[idadeApos,setIdadeApos]=useState("55");
   const[aporteMensal,setAporteMensal]=useState("");
   const[ipca,setIpca]=useState(String(RATES.ipca12m||4.5));
+  const[inflSaude,setInflSaude]=useState("12");// plano de saúde sobe ~12% ao ano historicamente
   const[hovGraf,setHovGraf]=useState(null);
+
+  // Get gastos fixos from last month with data
+  const allOrcM=[...new Set((orc||[]).filter(i=>i.data).map(i=>i.data.slice(0,7)))].sort();
+  const lastM=allOrcM[allOrcM.length-1]||"";
+  const orcLastM=(orc||[]).filter(i=>i.data&&i.data.startsWith(lastM));
+  const gastosFixosBase=orcLastM.filter(i=>i.tipo!=="Receita"&&i.fixo).reduce((a,i)=>a+(Number(i.valor)||0),0);
+  const saudeBase=orcLastM.filter(i=>i.tipo!=="Receita"&&(i.categoria||"").toLowerCase().includes("unimed")).reduce((a,i)=>a+(Number(i.valor)||0),0);
 
   const ia=Number(idadeAtual)||0;const iap=Number(idadeApos)||0;const anos=Math.max(0,iap-ia);const meses=anos*12;
   const ap=Number(aporteMensal)||0;const infl=Number(ipca)||4.5;
@@ -1417,6 +1425,16 @@ function ProjecoesTab({tG,tRM,retPct}){const P=useT();const S=useS();
   const calcAporteNecessario=(meta)=>{const pvNecessario=meta/(retReal/100);const extra=Math.max(0,pvNecessario-patrimonioAtual*Math.pow(1+retNom/100,meses));return meses>0?extra*(retNom/100)/(Math.pow(1+retNom/100,meses)-1):pvNecessario;};
   const aporteParaMeta=calcAporteNecessario(rendaMeta);
 
+  // Gastos fixos futuros (corrigidos pelo IPCA)
+  const gastosFixosFuturos=gastosFixosBase*Math.pow(1+infl/100,anos);
+  const coberturaPct=rendaMensalNomFutura>0&&gastosFixosFuturos>0?Math.min(999,(rendaMensalNomFutura/gastosFixosFuturos)*100):0;
+  const coberturaReal=poderCompraHoje>0&&gastosFixosBase>0?Math.min(999,(poderCompraHoje/gastosFixosBase)*100):0;
+
+  // Plano de saúde futuro
+  const saudeFuturo=saudeBase*Math.pow(1+Number(inflSaude)/100,anos);
+  // ANS teto histórico ~9%, mas valor real costuma ser ~12%
+  const saudeFuturoConservador=saudeBase*Math.pow(1+9/100,anos);
+
   // Chart: patrimônio ao longo do tempo (a cada 12 meses)
   const chartPts=[];for(let m=0;m<=meses;m+=12){chartPts.push({m,nom:calcFV(patrimonioAtual,ap,retNom,m),real:calcFV(patrimonioAtual,ap,retNom,m)/Math.pow(1+infl/100/12,m)});}
   const maxPat=Math.max(...chartPts.map(p=>p.nom),1);
@@ -1434,6 +1452,7 @@ function ProjecoesTab({tG,tRM,retPct}){const P=useT();const S=useS();
         <div><label style={S.lbl}>Idade Aposentadoria</label><input style={S.i} type="number" min="1" max="99" value={idadeApos} onChange={e=>setIdadeApos(e.target.value)}/></div>
         <div><label style={S.lbl}>Aporte Mensal (R$)</label><input style={S.i} type="number" step="100" value={aporteMensal} onChange={e=>setAporteMensal(e.target.value)}/></div>
         <div><label style={S.lbl}>IPCA Esperado (% a.a.)</label><input style={S.i} type="number" step="0.1" value={ipca} onChange={e=>setIpca(e.target.value)}/></div>
+        <div><label style={S.lbl}>Inflação Saúde (% a.a.)</label><input style={S.i} type="number" step="0.5" value={inflSaude} onChange={e=>setInflSaude(e.target.value)}/></div>
       </div>
     </div>
 
@@ -1485,6 +1504,47 @@ function ProjecoesTab({tG,tRM,retPct}){const P=useT();const S=useS();
           {ap>0&&aporteParaMeta<=ap&&<div style={{marginTop:8,fontSize:11,color:P.accent}}>✓ Seu aporte atual já cobre essa meta!</div>}
         </div>
       </div>
+
+      {/* Gastos fixos + saúde */}
+      {gastosFixosBase>0&&(<div style={{...S.card,marginTop:4}}>
+        <div style={{fontSize:13,fontWeight:700,color:P.textDim,marginBottom:4}}>Gastos fixos e saúde no futuro</div>
+        <div style={{fontSize:11,color:P.textMuted,marginBottom:16}}>Base: {mL(lastM)} · Gastos fixos: {fmt(gastosFixosBase)}/mês{saudeBase>0?` · Saúde (Unimed): ${fmt(saudeBase)}/mês`:""}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:14,marginBottom:20}}>
+          <div style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:10,padding:"14px 18px"}}>
+            <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:6}}>Gastos Fixos em {new Date().getFullYear()+anos}</div>
+            <div style={{fontSize:20,fontWeight:700,color:P.orange}}>{fmt(gastosFixosFuturos)}/mês</div>
+            <div style={{fontSize:11,color:P.textDim,marginTop:4}}>Hoje: {fmt(gastosFixosBase)}/mês (+{((gastosFixosFuturos/gastosFixosBase-1)*100).toFixed(0)}%)</div>
+          </div>
+          <div style={{background:P.surfaceAlt,border:`1px solid ${coberturaPct>=100?P.accent:P.red}44`,borderRadius:10,padding:"14px 18px"}}>
+            <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:6}}>Cobertura pelo Rendimento Nominal</div>
+            <div style={{fontSize:24,fontWeight:700,color:coberturaPct>=100?P.accent:P.red}}>{coberturaPct.toFixed(1)}%</div>
+            <div style={{fontSize:11,color:P.textDim,marginTop:4}}>{coberturaPct>=100?"✓ Renda cobre os fixos":"⚠ Renda não cobre os fixos"}</div>
+          </div>
+          <div style={{background:P.surfaceAlt,border:`1px solid ${coberturaReal>=100?P.cyan:P.yellow}44`,borderRadius:10,padding:"14px 18px"}}>
+            <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:6}}>Cobertura pelo Poder de Compra Real</div>
+            <div style={{fontSize:24,fontWeight:700,color:coberturaReal>=100?P.cyan:P.yellow}}>{coberturaReal.toFixed(1)}%</div>
+            <div style={{fontSize:11,color:P.textDim,marginTop:4}}>Renda real vs gastos fixos hoje</div>
+          </div>
+        </div>
+        {/* Progress bar */}
+        <div style={{marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:4}}><span style={{color:P.textDim}}>Cobertura nominal dos gastos fixos</span><span style={{fontWeight:600,color:coberturaPct>=100?P.accent:P.red}}>{coberturaPct.toFixed(1)}%</span></div>
+          <div style={{height:10,background:P.surfaceAlt,borderRadius:5,overflow:"hidden"}}><div style={{width:`${Math.min(100,coberturaPct)}%`,height:"100%",background:coberturaPct>=100?P.accent:P.red,borderRadius:5,transition:"width 0.5s ease"}}/></div>
+        </div>
+        {saudeBase>0&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+          <div style={{background:P.surfaceAlt,border:`1px solid ${P.red}44`,borderRadius:10,padding:"14px 18px"}}>
+            <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:6}}>Plano de Saúde — Cenário Realista ({inflSaude}% a.a.)</div>
+            <div style={{fontSize:20,fontWeight:700,color:P.red}}>{fmt(saudeFuturo)}/mês</div>
+            <div style={{fontSize:11,color:P.textDim,marginTop:4}}>Hoje: {fmt(saudeBase)}/mês · Em {anos} anos: +{(((saudeFuturo/saudeBase)-1)*100).toFixed(0)}%</div>
+          </div>
+          <div style={{background:P.surfaceAlt,border:`1px solid ${P.orange}44`,borderRadius:10,padding:"14px 18px"}}>
+            <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:6}}>Plano de Saúde — Cenário Conservador (9% a.a./ANS)</div>
+            <div style={{fontSize:20,fontWeight:700,color:P.orange}}>{fmt(saudeFuturoConservador)}/mês</div>
+            <div style={{fontSize:11,color:P.textDim,marginTop:4}}>Hoje: {fmt(saudeBase)}/mês · Em {anos} anos: +{(((saudeFuturoConservador/saudeBase)-1)*100).toFixed(0)}%</div>
+          </div>
+        </div>)}
+      </div>)}
     </div>)}
     {(anos<=0||retNom<=0)&&(<div style={{...S.card,textAlign:"center",padding:60,color:P.textMuted}}>
       <div style={{fontSize:36,marginBottom:12}}>🎯</div>
@@ -1653,7 +1713,7 @@ export default function App(){
   const _dFi=fiis.reduce((a,i)=>a+(Number(i.dividendoMensal)||0),0);
   const _tG=rf.reduce((a,i)=>a+(Number(i.valor)||0),0)+inco.reduce((a,i)=>a+(Number(i.valor)||0),0)+ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+etfs.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+cr.reduce((a,i)=>a+(Number(i.valorInvestido)||0),0);
   const _tRM=_mRF+_mIN+_dFi;const _retPct=_tG>0?((_tRM/_tG)*100):0;
-  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rf} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc}/>;case"comp":return<CompTab/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"proj":return<ProjecoesTab tG={_tG} tRM={_tRM} retPct={_retPct}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"td":return<TDTab apos={tdApos} setApos={setTdApos} liza={tdLiza} setLiza={setTdLiza}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rf} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef}/>;case"imoveis":return<ImoveisTab/>;case"cfg":return<CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/>;default:return null;}};
+  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rf} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc}/>;case"comp":return<CompTab/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"proj":return<ProjecoesTab tG={_tG} tRM={_tRM} retPct={_retPct} orc={orc}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"td":return<TDTab apos={tdApos} setApos={setTdApos} liza={tdLiza} setLiza={setTdLiza}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rf} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef}/>;case"imoveis":return<ImoveisTab/>;case"cfg":return<CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/>;default:return null;}};
   const isDarkSidebar=P.sidebarBg&&parseInt(P.sidebarBg.replace("#",""),16)<0x888888;
   const sbText=isDarkSidebar?"#e8e0d6":P.text;const sbTextDim=isDarkSidebar?"#a09890":P.textDim;const sbTextMuted=isDarkSidebar?"#6b635a":P.textMuted;const sbHover=isDarkSidebar?"rgba(255,255,255,0.08)":P.hover;const sbAccentGlow=isDarkSidebar?"rgba(196,98,42,0.20)":P.accentGlow;
   function SBItem({t}){const[h,setH]=useState(false);const active=tab===t.id;return(<div onClick={()=>setTab(t.id)} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 16px",cursor:"pointer",fontSize:12,fontWeight:active?600:400,color:active?P.accent:h?sbText:sbTextDim,background:active?sbAccentGlow:h?sbHover:"transparent",borderRight:active?`2px solid ${P.accent}`:"2px solid transparent",transition:"all 0.2s ease",borderRadius:h&&!active?"6px 0 0 6px":"0",transform:h&&!active?"translateX(4px)":"none"}}><span style={{fontSize:14,opacity:active?1:h?1:0.7,transition:"all 0.2s ease"}}>{t.ic}</span>{t.l}</div>);}

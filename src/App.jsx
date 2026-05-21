@@ -6,7 +6,7 @@ const LIGHT={bg:"#f0f2f5",surface:"#ffffff",surfaceAlt:"#f7f8fa",border:"#e2e5ea
 const INDUSTRIAL_LIGHT={bg:"#faf8f5",surface:"#ffffff",surfaceAlt:"#f5f2ee",border:"#d8d3cc",borderLight:"#e0dbd4",text:"#2c2a26",textDim:"#6b6860",textMuted:"#908d85",accent:"#4a7c59",accentGlow:"rgba(74,124,89,0.10)",red:"#b33a3a",redDim:"rgba(179,58,58,0.06)",blue:"#3d6b99",blueDim:"rgba(61,107,153,0.06)",yellow:"#a67c3d",yellowDim:"rgba(166,124,61,0.06)",purple:"#7a5ea8",purpleDim:"rgba(122,94,168,0.06)",orange:"#c47a35",orangeDim:"rgba(196,122,53,0.06)",cyan:"#3d8a8a",cyanDim:"rgba(61,138,138,0.06)",hover:"rgba(0,0,0,0.03)",sidebarBg:"#f0ede8",thBg:"#e8e3dd"};
 const INDUSTRIAL={bg:"#f5f0eb",surface:"#ebe6df",surfaceAlt:"#e0dbd4",border:"#c8c3bc",borderLight:"#d5d0c9",text:"#2c2a26",textDim:"#6b6860",textMuted:"#908d85",accent:"#4a7c59",accentGlow:"rgba(74,124,89,0.12)",red:"#b33a3a",redDim:"rgba(179,58,58,0.08)",blue:"#3d6b99",blueDim:"rgba(61,107,153,0.08)",yellow:"#a67c3d",yellowDim:"rgba(166,124,61,0.08)",purple:"#7a5ea8",purpleDim:"rgba(122,94,168,0.08)",orange:"#c47a35",orangeDim:"rgba(196,122,53,0.08)",cyan:"#3d8a8a",cyanDim:"rgba(61,138,138,0.08)",hover:"rgba(0,0,0,0.04)",sidebarBg:"#d8d3cc",thBg:"#cec9c2"};
 const PLANNER={bg:"#faf6f1",surface:"#ffffff",surfaceAlt:"#f5f0ea",border:"#e8e0d6",borderLight:"#ede6dd",text:"#2d2926",textDim:"#6b635a",textMuted:"#a09890",accent:"#c4622a",accentGlow:"rgba(196,98,42,0.10)",red:"#c43a3a",redDim:"rgba(196,58,58,0.08)",blue:"#4a7a9b",blueDim:"rgba(74,122,155,0.08)",yellow:"#c49a2a",yellowDim:"rgba(196,154,42,0.08)",purple:"#8a5ea0",purpleDim:"rgba(138,94,160,0.08)",orange:"#c4622a",orangeDim:"rgba(196,98,42,0.08)",cyan:"#3a8a7a",cyanDim:"rgba(58,138,122,0.08)",hover:"rgba(0,0,0,0.03)",sidebarBg:"#2d2926",thBg:"#f0e8df"};
-const TABS_M=[{id:"dashboard",l:"Dashboard",ic:"◉"},{id:"comp",l:"Comparação",ic:"⚖"},{id:"evo",l:"Evolução",ic:"📈"}];
+const TABS_M=[{id:"dashboard",l:"Dashboard",ic:"◉"},{id:"comp",l:"Comparação",ic:"⚖"},{id:"evo",l:"Evolução",ic:"📈"},{id:"proj",l:"Projeções",ic:"🎯"}];
 const TABS_I=[{id:"rf",l:"Renda Fixa",ic:"▤"},{id:"inco",l:"INCO",ic:"⌂"},{id:"td",l:"Tesouro Direto",ic:"🏛"},{id:"ac",l:"Ações",ic:"▲"},{id:"etf",l:"ETFs",ic:"◆"},{id:"fii",l:"FIIs",ic:"⬡"},{id:"cr",l:"Cripto",ic:"◈"},{id:"ap",l:"Aportes",ic:"↗"},{id:"sim",l:"Simulação",ic:"🧮"}];
 const TABS_G=[{id:"orc",l:"Orçamento",ic:"☰"},{id:"irpf",l:"IRPF",ic:"📋"},{id:"prf",l:"PRF",ic:"📊"},{id:"imoveis",l:"Imóveis",ic:"🏠"}];
 const TABS_S=[{id:"ind",l:"Índices",ic:"≡"},{id:"cfg",l:"Config",ic:"⚙"}];
@@ -1383,6 +1383,116 @@ function CompTab(){const P=useT();const S=useS();
   </div>);
 }
 
+/* PROJEÇÕES — Aposentadoria Antecipada */
+function ProjecoesTab({tG,tRM,retPct}){const P=useT();const S=useS();
+  const[idadeAtual,setIdadeAtual]=useState("40");
+  const[idadeApos,setIdadeApos]=useState("55");
+  const[aporteMensal,setAporteMensal]=useState("");
+  const[ipca,setIpca]=useState(String(RATES.ipca12m||4.5));
+  const[hovGraf,setHovGraf]=useState(null);
+
+  const ia=Number(idadeAtual)||0;const iap=Number(idadeApos)||0;const anos=Math.max(0,iap-ia);const meses=anos*12;
+  const ap=Number(aporteMensal)||0;const infl=Number(ipca)||4.5;
+  const retNom=(retPct||0);// taxa mensal nominal da carteira atual
+  const retReal=Math.max(0,((1+retNom/100)/(1+infl/100/12)-1)*100);// taxa real mensal
+  const retAnualNom=retNom*12;const retAnualReal=retReal*12;
+
+  // Patrimônio projetado: carteira atual + aportes durante o período
+  const patrimonioAtual=tG||0;
+  // FV = PV*(1+r)^n + PMT*((1+r)^n-1)/r
+  const calcFV=(pv,pmt,rMes,n)=>{if(n<=0)return pv;const f=Math.pow(1+rMes/100,n);return pv*f+pmt*(f-1)/(rMes/100);};
+  const pvNom=calcFV(patrimonioAtual,ap,retNom,meses);
+  const pvReal=pvNom/Math.pow(1+infl/100/12,meses);// deflacionar para hoje
+
+  // Renda mensal futura: patrimônio × taxa real mensal (perpetuidade)
+  const rendaMensalNomFutura=pvNom*(retNom/100);
+  const rendaMensalRealFutura=pvReal*(retReal/100);
+  const poderCompraHoje=rendaMensalNomFutura/Math.pow(1+infl/100/12,meses);
+
+  // Sugestão de correção do aporte: aporte cresce com IPCA anual
+  const aporteCorrigidoFinal=ap*Math.pow(1+infl/100,anos);
+
+  // Qual aporte necessário para atingir determinada renda real?
+  const rendaMeta=tRM*2||5000;// exemplo: 2x a renda atual ou R$ 5k
+  const calcAporteNecessario=(meta)=>{const pvNecessario=meta/(retReal/100);const extra=Math.max(0,pvNecessario-patrimonioAtual*Math.pow(1+retNom/100,meses));return meses>0?extra*(retNom/100)/(Math.pow(1+retNom/100,meses)-1):pvNecessario;};
+  const aporteParaMeta=calcAporteNecessario(rendaMeta);
+
+  // Chart: patrimônio ao longo do tempo (a cada 12 meses)
+  const chartPts=[];for(let m=0;m<=meses;m+=12){chartPts.push({m,nom:calcFV(patrimonioAtual,ap,retNom,m),real:calcFV(patrimonioAtual,ap,retNom,m)/Math.pow(1+infl/100/12,m)});}
+  const maxPat=Math.max(...chartPts.map(p=>p.nom),1);
+  const W=900,H=280,pd={t:20,r:30,b:40,l:90},cW=W-pd.l-pd.r,cH=H-pd.t-pd.b;
+  const xS=chartPts.length>1?cW/(chartPts.length-1):cW;
+  const yy=v=>pd.t+cH*(1-v/maxPat);
+
+  return(<div>
+    <div style={{fontSize:22,fontWeight:700,marginBottom:24}}>Projeção — Aposentadoria Antecipada</div>
+    {/* Inputs */}
+    <div style={S.card}>
+      <div style={{fontSize:13,fontWeight:700,color:P.textDim,marginBottom:16}}>Parâmetros</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:16}}>
+        <div><label style={S.lbl}>Idade Atual (anos)</label><input style={S.i} type="number" min="1" max="99" value={idadeAtual} onChange={e=>setIdadeAtual(e.target.value)}/></div>
+        <div><label style={S.lbl}>Idade Aposentadoria</label><input style={S.i} type="number" min="1" max="99" value={idadeApos} onChange={e=>setIdadeApos(e.target.value)}/></div>
+        <div><label style={S.lbl}>Aporte Mensal (R$)</label><input style={S.i} type="number" step="100" value={aporteMensal} onChange={e=>setAporteMensal(e.target.value)}/></div>
+        <div><label style={S.lbl}>IPCA Esperado (% a.a.)</label><input style={S.i} type="number" step="0.1" value={ipca} onChange={e=>setIpca(e.target.value)}/></div>
+      </div>
+    </div>
+
+    {anos>0&&retNom>0&&(<div>
+      {/* Summary cards */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:14,marginBottom:20}}>
+        <div style={{...S.card,borderLeft:`4px solid ${P.blue}`}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:6}}>Tempo de Contribuição</div><div style={{fontSize:22,fontWeight:700,color:P.blue}}>{anos} anos</div><div style={{fontSize:11,color:P.textDim}}>{meses} meses</div></div>
+        <div style={{...S.card,borderLeft:`4px solid ${P.accent}`}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:6}}>Patrimônio Nominal</div><div style={{fontSize:20,fontWeight:700,color:P.accent}}>{fmt(pvNom)}</div><div style={{fontSize:11,color:P.textDim}}>em valores de {new Date().getFullYear()+anos}</div></div>
+        <div style={{...S.card,borderLeft:`4px solid ${P.cyan}`}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:6}}>Patrimônio Real (hoje)</div><div style={{fontSize:20,fontWeight:700,color:P.cyan}}>{fmt(pvReal)}</div><div style={{fontSize:11,color:P.textDim}}>poder de compra atual</div></div>
+        <div style={{...S.card,borderLeft:`4px solid ${P.yellow}`}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:6}}>Taxa Real Mensal</div><div style={{fontSize:20,fontWeight:700,color:P.yellow}}>{retReal.toFixed(4)}%</div><div style={{fontSize:11,color:P.textDim}}>{retAnualReal.toFixed(2)}% a.a. real</div></div>
+        <div style={{...S.card,borderLeft:`4px solid ${P.purple}`}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:6}}>Renda Mensal Nominal</div><div style={{fontSize:20,fontWeight:700,color:P.purple}}>{fmt(rendaMensalNomFutura)}</div><div style={{fontSize:11,color:P.textDim}}>em {new Date().getFullYear()+anos}</div></div>
+        <div style={{...S.card,borderLeft:`4px solid ${P.orange}`}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:6}}>Poder de Compra Hoje</div><div style={{fontSize:20,fontWeight:700,color:P.orange}}>{fmt(poderCompraHoje)}</div><div style={{fontSize:11,color:P.textDim}}>equivalente hoje</div></div>
+      </div>
+
+      {/* Projection chart */}
+      <div style={{...S.card,padding:24,marginBottom:20}}>
+        <div style={{display:"flex",gap:16,marginBottom:14}}>
+          <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}><div style={{width:14,height:3,background:P.accent,borderRadius:2}}/><span style={{color:P.textDim}}>Nominal</span></div>
+          <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}><div style={{width:14,height:3,borderRadius:2,background:P.cyan,opacity:0.7}}/><span style={{color:P.textDim}}>Real (em valores de hoje)</span></div>
+        </div>
+        <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" onMouseLeave={()=>setHovGraf(null)}>
+          {[0,0.25,0.5,0.75,1].map(p=>(<g key={p}><line x1={pd.l} y1={pd.t+cH*(1-p)} x2={W-pd.r} y2={pd.t+cH*(1-p)} stroke={P.border} strokeWidth="1"/><text x={pd.l-8} y={pd.t+cH*(1-p)+4} textAnchor="end" fontSize="9" fill={P.textMuted}>{fmt(maxPat*p)}</text></g>))}
+          {chartPts.map((p,i)=>(<text key={i} x={pd.l+i*xS} y={H-8} textAnchor="middle" fontSize="8" fill={P.textMuted}>{ia+p.m/12}a</text>))}
+          {hovGraf!==null&&<line x1={pd.l+hovGraf*xS} y1={pd.t} x2={pd.l+hovGraf*xS} y2={pd.t+cH} stroke={P.textMuted} strokeWidth="1" strokeDasharray="3,3" opacity="0.5"/>}
+          {/* Area fills */}
+          <path d={`M${pd.l},${yy(chartPts[0]?.nom||0)} ${chartPts.map((p,i)=>`L${pd.l+i*xS},${yy(p.nom)}`).join(" ")} L${pd.l+(chartPts.length-1)*xS},${pd.t+cH} L${pd.l},${pd.t+cH} Z`} fill={P.accent+"18"} stroke="none"/>
+          <polyline points={chartPts.map((p,i)=>`${pd.l+i*xS},${yy(p.nom)}`).join(" ")} fill="none" stroke={P.accent} strokeWidth="2.5" strokeLinejoin="round"/>
+          <polyline points={chartPts.map((p,i)=>`${pd.l+i*xS},${yy(p.real)}`).join(" ")} fill="none" stroke={P.cyan} strokeWidth="2" strokeDasharray="6,3" strokeLinejoin="round"/>
+          {chartPts.map((p,i)=>{const isH=hovGraf===i;const cx=pd.l+i*xS;return(<g key={i}><rect x={cx-20} y={pd.t} width={40} height={cH} fill="transparent" onMouseEnter={()=>setHovGraf(i)}/>{isH&&<><circle cx={cx} cy={yy(p.nom)} r="5" fill={P.accent} stroke={P.bg} strokeWidth="2"/><circle cx={cx} cy={yy(p.real)} r="5" fill={P.cyan} stroke={P.bg} strokeWidth="2"/><rect x={cx-70} y={pd.t} width={140} height={48} rx={5} fill={P.surface} stroke={P.border} strokeWidth="1"/><text x={cx} y={pd.t+14} textAnchor="middle" fontSize="9" fontWeight="700" fill={P.textDim}>Aos {ia+p.m/12} anos</text><text x={cx} y={pd.t+27} textAnchor="middle" fontSize="9" fill={P.accent}>Nom: {fmt(p.nom)}</text><text x={cx} y={pd.t+40} textAnchor="middle" fontSize="9" fill={P.cyan}>Real: {fmt(p.real)}</text></>}</g>);})}
+        </svg>
+      </div>
+
+      {/* Recommendations */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+        {ap>0&&(<div style={{...S.card,background:`${P.accentGlow}`,border:`1px solid ${P.accent}44`}}>
+          <div style={{fontSize:13,fontWeight:700,color:P.accent,marginBottom:12}}>💡 Sugestão: Correção do Aporte pelo IPCA</div>
+          <div style={{fontSize:12,color:P.textDim,marginBottom:12}}>Para manter o poder de compra dos seus aportes, recomenda-se corrigi-los anualmente pelo IPCA ({ipca}% a.a.).</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div><div style={{fontSize:10,color:P.textMuted}}>Aporte hoje</div><div style={{fontSize:16,fontWeight:700}}>{fmt(ap)}/mês</div></div>
+            <div><div style={{fontSize:10,color:P.textMuted}}>Aporte em {anos} anos</div><div style={{fontSize:16,fontWeight:700,color:P.accent}}>{fmt(aporteCorrigidoFinal)}/mês</div></div>
+          </div>
+          <div style={{marginTop:12,fontSize:11,color:P.textDim}}>Aumento acumulado: {fmt(aporteCorrigidoFinal-ap)} (+{(((aporteCorrigidoFinal/ap)-1)*100).toFixed(0)}%)</div>
+        </div>)}
+        <div style={{...S.card,background:`${P.blueDim}`,border:`1px solid ${P.blue}44`}}>
+          <div style={{fontSize:13,fontWeight:700,color:P.blue,marginBottom:12}}>📊 Aporte para Renda de {fmt(rendaMeta)}/mês real</div>
+          <div style={{fontSize:12,color:P.textDim,marginBottom:12}}>Para atingir poder de compra de {fmt(rendaMeta)}/mês (valor de hoje) na aposentadoria:</div>
+          <div><div style={{fontSize:10,color:P.textMuted}}>Aporte mensal necessário</div><div style={{fontSize:22,fontWeight:700,color:aporteParaMeta<=ap&&ap>0?P.accent:P.blue}}>{fmt(aporteParaMeta)}/mês</div></div>
+          {ap>0&&aporteParaMeta>ap&&<div style={{marginTop:8,fontSize:11,color:P.orange}}>⚠ Faltam {fmt(aporteParaMeta-ap)}/mês para atingir essa meta</div>}
+          {ap>0&&aporteParaMeta<=ap&&<div style={{marginTop:8,fontSize:11,color:P.accent}}>✓ Seu aporte atual já cobre essa meta!</div>}
+        </div>
+      </div>
+    </div>)}
+    {(anos<=0||retNom<=0)&&(<div style={{...S.card,textAlign:"center",padding:60,color:P.textMuted}}>
+      <div style={{fontSize:36,marginBottom:12}}>🎯</div>
+      <div>{retNom<=0?"Registre investimentos no app para calcular a taxa de retorno atual.":"Preencha sua idade atual e a idade desejada de aposentadoria."}</div>
+    </div>)}
+  </div>);
+}
+
 /* DASHBOARD with pie charts */
 function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc}){const P=useT();const S=useS();
   const[hovEvo,setHovEvo]=useState(null);
@@ -1543,7 +1653,7 @@ export default function App(){
   const _dFi=fiis.reduce((a,i)=>a+(Number(i.dividendoMensal)||0),0);
   const _tG=rf.reduce((a,i)=>a+(Number(i.valor)||0),0)+inco.reduce((a,i)=>a+(Number(i.valor)||0),0)+ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+etfs.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+cr.reduce((a,i)=>a+(Number(i.valorInvestido)||0),0);
   const _tRM=_mRF+_mIN+_dFi;const _retPct=_tG>0?((_tRM/_tG)*100):0;
-  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rf} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc}/>;case"comp":return<CompTab/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"td":return<TDTab apos={tdApos} setApos={setTdApos} liza={tdLiza} setLiza={setTdLiza}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rf} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef}/>;case"imoveis":return<ImoveisTab/>;case"cfg":return<CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/>;default:return null;}};
+  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rf} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc}/>;case"comp":return<CompTab/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"proj":return<ProjecoesTab tG={_tG} tRM={_tRM} retPct={_retPct}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"td":return<TDTab apos={tdApos} setApos={setTdApos} liza={tdLiza} setLiza={setTdLiza}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rf} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef}/>;case"imoveis":return<ImoveisTab/>;case"cfg":return<CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/>;default:return null;}};
   const isDarkSidebar=P.sidebarBg&&parseInt(P.sidebarBg.replace("#",""),16)<0x888888;
   const sbText=isDarkSidebar?"#e8e0d6":P.text;const sbTextDim=isDarkSidebar?"#a09890":P.textDim;const sbTextMuted=isDarkSidebar?"#6b635a":P.textMuted;const sbHover=isDarkSidebar?"rgba(255,255,255,0.08)":P.hover;const sbAccentGlow=isDarkSidebar?"rgba(196,98,42,0.20)":P.accentGlow;
   function SBItem({t}){const[h,setH]=useState(false);const active=tab===t.id;return(<div onClick={()=>setTab(t.id)} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 16px",cursor:"pointer",fontSize:12,fontWeight:active?600:400,color:active?P.accent:h?sbText:sbTextDim,background:active?sbAccentGlow:h?sbHover:"transparent",borderRight:active?`2px solid ${P.accent}`:"2px solid transparent",transition:"all 0.2s ease",borderRadius:h&&!active?"6px 0 0 6px":"0",transform:h&&!active?"translateX(4px)":"none"}}><span style={{fontSize:14,opacity:active?1:h?1:0.7,transition:"all 0.2s ease"}}>{t.ic}</span>{t.l}</div>);}

@@ -1150,6 +1150,7 @@ function PrfTab({prfRef}){const P=useT();const S=useS();const[sub,setSub]=useSta
   const[dIni,setDIni]=useState("");const[dFim,setDFim]=useState("");const[dTipo,setDTipo]=useState("Interior");
   const[dHotel,setDHotel]=useState("");const[dLimpeza,setDLimpeza]=useState("");
   const[dCarroProprio,setDCarroProprio]=useState(false);const[dDistKm,setDDistKm]=useState("");const[dCombustivel,setDCombustivel]=useState("6.50");const[dConsumo,setDConsumo]=useState("10");const[dPlantoes,setDPlantoes]=useState("1");
+  const[dGecc,setDGecc]=useState(false);const[dHorasGecc,setDHorasGecc]=useState("");
   // NETWORKDAYS helper (count weekdays between two dates)
   const networkDays=(start,end)=>{if(!start||!end)return 0;let d=new Date(start),e=new Date(end),count=0;while(d<=e){const dow=d.getDay();if(dow!==0&&dow!==6)count++;d.setDate(d.getDate()+1);}return count;};
   // EOMONTH helper
@@ -1171,11 +1172,14 @@ function PrfTab({prfRef}){const P=useT();const S=useS();const[sub,setSub]=useSta
   const dHospTotal=dHotelNum*Math.floor(dDias)+dLimpezaNum;
   // Car cost: (distancia / consumo) * preco_combustivel
   const dCustoCarro=dCarroProprio?((Number(dDistKm)||0)/(Number(dConsumo)||10))*(Number(dCombustivel)||6.5)*(Number(dPlantoes)||1):0;
+  const dGeccBruto=dGecc?(Number(dHorasGecc)||0)*(ref.horaGECC||165.78):0;
+  const dGeccLiq=dGeccBruto*(1-0.275);
   const dRestante=dLiquido-dHospTotal-dCustoCarro;
+  const dSaldoTotal=dRestante+dGeccLiq;
   // ADFRON lost: days away × daily ADFRON rate
   const diasInteiros=Math.ceil(dDias);
   const adfronPerdido=diasInteiros*(ref.diaADFRON||92);
-  const saldoVsAdfron=dRestante-adfronPerdido;
+  const saldoVsAdfron=dSaldoTotal-adfronPerdido;
   // ADFRON/GECC
   const[adDias,setAdDias]=useState("");const[gcHoras,setGcHoras]=useState("");
   const adTotal=(Number(adDias)||0)*(ref.diaADFRON||92);
@@ -1203,11 +1207,15 @@ function PrfTab({prfRef}){const P=useT();const S=useS();const[sub,setSub]=useSta
         <div><label style={S.lbl}>Destino</label><select style={S.sel} value={dTipo} onChange={e=>setDTipo(e.target.value)}><option value="Capitais">Capitais — R$ 380,00</option><option value="SP/RJ/AM/BSB">SP/RJ/AM/BSB — R$ 425,00</option><option value="Interior">Interior — R$ 335,00</option></select></div>
         <div><label style={S.lbl}>Diária Hotel</label><input style={S.i} type="number" step="0.01" placeholder="R$/noite" value={dHotel} onChange={e=>setDHotel(e.target.value)}/></div>
         <div><label style={S.lbl}>Taxa Limpeza</label><input style={S.i} type="number" step="0.01" placeholder="R$ total" value={dLimpeza} onChange={e=>setDLimpeza(e.target.value)}/></div>
-        <div style={{gridColumn:"1/-1"}}><label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13}}><input type="checkbox" checked={dCarroProprio} onChange={e=>setDCarroProprio(e.target.checked)}/>Carro próprio</label></div>
+        <div style={{gridColumn:"1/-1",display:"flex",gap:24,flexWrap:"wrap"}}>
+          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13}}><input type="checkbox" checked={dCarroProprio} onChange={e=>setDCarroProprio(e.target.checked)}/>Carro próprio</label>
+          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13}}><input type="checkbox" checked={dGecc} onChange={e=>setDGecc(e.target.checked)}/>GECC</label>
+        </div>
         {dCarroProprio&&<><div><label style={S.lbl}>Distância (km ida+volta)</label><input style={S.i} type="number" step="1" placeholder="km" value={dDistKm} onChange={e=>setDDistKm(e.target.value)}/></div>
         <div><label style={S.lbl}>Nº de Viagens</label><input style={S.i} type="number" step="1" value={dPlantoes} onChange={e=>setDPlantoes(e.target.value)}/></div>
         <div><label style={S.lbl}>Preço Combustível (R$/L)</label><input style={S.i} type="number" step="0.01" value={dCombustivel} onChange={e=>setDCombustivel(e.target.value)}/></div>
         <div><label style={S.lbl}>Consumo Médio (km/L)</label><input style={S.i} type="number" step="0.1" value={dConsumo} onChange={e=>setDConsumo(e.target.value)}/></div></>}
+        {dGecc&&<div><label style={S.lbl}>Horas GECC ({fmt(ref.horaGECC||165.78)}/h)</label><input style={S.i} type="number" step="0.5" placeholder="0" value={dHorasGecc} onChange={e=>setDHorasGecc(e.target.value)}/></div>}
       </div>
       <div style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:10,padding:20}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:13}}>
@@ -1220,9 +1228,12 @@ function PrfTab({prfRef}){const P=useT();const S=useS();const[sub,setSub]=useSta
           {dLimpezaNum>0&&<><div style={{color:P.textDim}}>Taxa Limpeza</div><div style={{fontWeight:600,textAlign:"right",color:P.red}}>- {fmt(dLimpezaNum)}</div></>}
           {(dHotelNum>0||dLimpezaNum>0)&&<><div style={{color:P.textDim}}>Hospedagem Total</div><div style={{fontWeight:600,textAlign:"right",color:P.red}}>- {fmt(dHospTotal)}</div></>}
           {dCustoCarro>0&&<><div style={{color:P.textDim}}>Combustível ({dDistKm}km × {dPlantoes} viag. ÷ {dConsumo}km/L × {fmt(dCombustivel)})</div><div style={{fontWeight:600,textAlign:"right",color:P.red}}>- {fmt(dCustoCarro)}</div></>}
-          {(dHotelNum>0||dLimpezaNum>0||dCustoCarro>0)&&<><div style={{color:P.textDim,fontSize:14,fontWeight:700,borderTop:`2px solid ${P.accent}`,paddingTop:8}}>Valor Restante</div><div style={{fontSize:20,fontWeight:700,color:dRestante>=0?P.accent:P.red,textAlign:"right",borderTop:`2px solid ${P.accent}`,paddingTop:8}}>{fmt(dRestante)}</div></>}
+          {(dHotelNum>0||dLimpezaNum>0||dCustoCarro>0)&&<><div style={{color:P.textDim,fontSize:14,fontWeight:700,borderTop:`2px solid ${P.accent}`,paddingTop:8}}>Valor Restante (após deduções)</div><div style={{fontSize:20,fontWeight:700,color:dRestante>=0?P.accent:P.red,textAlign:"right",borderTop:`2px solid ${P.accent}`,paddingTop:8}}>{fmt(dRestante)}</div></>}
+          {dGeccLiq>0&&<><div style={{color:P.textDim,borderTop:`1px solid ${P.border}`,paddingTop:8}}>GECC ({dHorasGecc}h × {fmt(ref.horaGECC||165.78)} − 27,5%)</div><div style={{fontWeight:600,textAlign:"right",color:P.accent,borderTop:`1px solid ${P.border}`,paddingTop:8}}>+ {fmt(dGeccLiq)}</div>
+          <div style={{fontSize:11,color:P.textMuted}}>Bruto: {fmt(dGeccBruto)}</div><div style={{fontSize:11,color:P.textMuted,textAlign:"right"}}>IR: - {fmt(dGeccBruto-dGeccLiq)}</div>
+          <div style={{color:P.textDim,fontSize:14,fontWeight:700,borderTop:`2px solid ${P.cyan}`,paddingTop:8}}>Total com GECC</div><div style={{fontSize:20,fontWeight:700,color:P.cyan,textAlign:"right",borderTop:`2px solid ${P.cyan}`,paddingTop:8}}>{fmt(dSaldoTotal)}</div></>}
           {dDias>0&&<><div style={{color:P.textDim,borderTop:`2px solid ${P.border}`,paddingTop:10,marginTop:4}}>ADFRON perdido ({diasInteiros}d × {fmt(ref.diaADFRON||92)})</div><div style={{fontWeight:600,textAlign:"right",color:P.red,borderTop:`2px solid ${P.border}`,paddingTop:10}}>- {fmt(adfronPerdido)}</div>
-          <div style={{color:P.textDim,fontSize:14,fontWeight:700,borderTop:`2px solid ${P.border}`,paddingTop:8}}>Saldo Final (Diárias − ADFRON)</div><div style={{fontSize:22,fontWeight:700,color:saldoVsAdfron>=0?P.accent:P.red,textAlign:"right",borderTop:`2px solid ${P.border}`,paddingTop:8}}>{fmt(saldoVsAdfron)}</div>
+          <div style={{color:P.textDim,fontSize:14,fontWeight:700,borderTop:`2px solid ${P.border}`,paddingTop:8}}>Saldo Final (Diárias{dGeccLiq>0?" + GECC":""} − ADFRON)</div><div style={{fontSize:22,fontWeight:700,color:saldoVsAdfron>=0?P.accent:P.red,textAlign:"right",borderTop:`2px solid ${P.border}`,paddingTop:8}}>{fmt(saldoVsAdfron)}</div>
           <div colSpan={2} style={{gridColumn:"1/-1",textAlign:"center",fontSize:11,marginTop:8,padding:"8px 12px",borderRadius:6,background:saldoVsAdfron>=0?P.accentGlow:P.redDim,color:saldoVsAdfron>=0?P.accent:P.red,fontWeight:600}}>{saldoVsAdfron>=0?"✓ Compensa viajar — saldo positivo após ADFRON":"✗ Não compensa — você perde dinheiro viajando"}</div></>}
         </div>
       </div>

@@ -580,6 +580,9 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
   const IGNORE_EXTRATO=["PAGAMENTO RECEBIDO","PAGAMENTO DE FATURA","PAG FATURA","APLICACAO","RESGATE","TRANSFERENCIA ENTRE","TED ENTRE","RENDIMENTO","IOF","TARIFA","JUROS","SALDO"];
   const parseTextToItems=(text,fileName,isExtrato)=>{
     const lines=text.split("\n").map(l=>l.trim()).filter(l=>l);const items=[];
+    // Detect separator from first data line
+    const detectSep=(line)=>{if(line.includes(";"))return";";if(line.includes("\t"))return"\t";if(line.includes(",")&&!line.match(/,\d{2}/))return",";return null;};
+    const firstDataLine=lines.find((l,i)=>i>0&&l.trim())||"";const sep=detectSep(firstDataLine);
     if(fileName.endsWith(".ofx")){
       const txns=text.split("<STMTTRN>").slice(1);
       txns.forEach(txn=>{const getField=(f)=>{const m=txn.match(new RegExp(`<${f}>(.*?)(?:<|\\n)`));return m?m[1].trim():"";};
@@ -591,13 +594,18 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
         items.push({id:uid(),data:fdt,tipo:"Despesa",categoria:mapped,descricao:(isPix?"PIX: ":"")+desc,valor:val.toFixed(2),fixo:AUTO_FIXO.includes(mapped),original:desc});
       });
     } else {
-      lines.forEach((line,idx)=>{if(idx===0&&(line.toLowerCase().includes("data")||line.toLowerCase().includes("date")||line.toLowerCase().includes("lançamento")))return;
-        const parts=line.split(/[;\t]/);let parsed=null;
+      lines.forEach((line,idx)=>{if(idx===0&&(line.toLowerCase().includes("data")||line.toLowerCase().includes("date")||line.toLowerCase().includes("lançamento")||line.toLowerCase().includes("title")||line.toLowerCase().includes("amount")))return;
+        const splitLine=(l)=>{if(l.includes(";"))return l.split(";");if(l.includes("\t"))return l.split("\t");// comma: use if line has date-like start (YYYY-MM-DD or DD/MM/YYYY) followed by comma
+          if(l.includes(",")&&(l.match(/^\d{4}-\d{2}-\d{2},/)||l.match(/^\d{2}[\/\-]\d{2}[\/\-]\d{4},/)))return l.split(",");return null;};
+        const parts=splitLine(line)||[];let parsed=null;
         if(parts.length>=3){
           let dt=parts[0].trim(),desc=parts[1].trim(),val=0;
+          // Handle both "date;title;amount" and "date;desc;debit;credit"
           if(isExtrato&&parts.length>=4){const debit=parts[2].trim().replace(/[^\d.,-]/g,"").replace(",",".");val=Math.abs(Number(debit)||0);if(val===0)return;}
-          else{val=Math.abs(Number(parts[parts.length-1].trim().replace(/[^\d.,-]/g,"").replace(",","."))||0);}
-          const dm=dt.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);if(dm)dt=`${dm[3]}-${dm[2]}-${dm[1]}`;
+          else{val=Math.abs(Number(parts[parts.length-1].trim().replace(/[^\d.,]/g,"").replace(",","."))||0);}
+          // Handle yyyy-mm-dd format (date column from image)
+          const dm1=dt.match(/(\d{4})-(\d{2})-(\d{2})/);if(dm1)dt=dt;// already YYYY-MM-DD, keep it
+          else{const dm2=dt.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);if(dm2)dt=`${dm2[3]}-${dm2[2]}-${dm2[1]}`;}
           if(val>0&&desc)parsed={dt,desc,val};
         }
         if(!parsed)parsed=parseFaturaLine(line);

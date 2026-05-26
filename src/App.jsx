@@ -1324,32 +1324,70 @@ function TDTab({apos,setApos,liza,setLiza}){const P=useT();const S=useS();const[
 /* IMÓVEIS TAB — with real estate indices + fetch */
 function ImoveisTab(){const P=useT();const S=useS();
   const[incc,setIncc]=useState("—");const[fipezap,setFipezap]=useState("—");const[loading,setLoading]=useState(false);
-  const fetchIdx=async()=>{setLoading(true);try{
-    const r=await fetch("https://api.bcb.gov.br/dados/serie/bcdata.sgs.27574/dados/ultimos/1?formato=json");
-    if(r.ok){const d=await r.json();if(d[0])setIncc(d[0].valor);}
-    // FIPEZAP not available via free API, use BCB INCC-DI as proxy
-    const r2=await fetch("https://api.bcb.gov.br/dados/serie/bcdata.sgs.192/dados/ultimos/1?formato=json");
-    if(r2.ok){const d2=await r2.json();if(d2[0])setFipezap(d2[0].valor+"% (INCC-DI)");}
-  }catch(e){console.error(e);}setLoading(false);};
-  const indices=[
-    {nome:"FIPEZAP / INCC-DI",desc:"Índice de custo da construção",valor:fipezap,fonte:"BCB SGS 192"},
-    {nome:"IGPM",desc:"Índice Geral de Preços do Mercado",valor:RATES.igpm?fP(RATES.igpm):"—",fonte:"BCB"},
-    {nome:"IPCA",desc:"Índice de Preços ao Consumidor Amplo",valor:RATES.ipca12m?fP(RATES.ipca12m):"—",fonte:"BCB"},
-    {nome:"INCC",desc:"Índice Nacional da Construção Civil",valor:incc,fonte:"BCB SGS 27574"},
-  ];
-  return(<div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}><div style={{fontSize:22,fontWeight:700}}>Imóveis</div><button style={S.btn()} onClick={fetchIdx} disabled={loading}>{loading?"Carregando...":"⟳ Atualizar Índices"}</button></div>
+  const fetchIdx=async()=>{setLoading(true);try{const r=await fetch("https://api.bcb.gov.br/dados/serie/bcdata.sgs.27574/dados/ultimos/1?formato=json");if(r.ok){const d=await r.json();if(d[0])setIncc(d[0].valor);}const r2=await fetch("https://api.bcb.gov.br/dados/serie/bcdata.sgs.192/dados/ultimos/1?formato=json");if(r2.ok){const d2=await r2.json();if(d2[0])setFipezap(d2[0].valor+"% (INCC-DI)");}}catch(e){console.error(e);}setLoading(false);};
+  const indices=[{nome:"FIPEZAP/INCC-DI",desc:"Índice construção",valor:fipezap,fonte:"BCB 192"},{nome:"IGPM",desc:"Preços mercado",valor:RATES.igpm?fP(RATES.igpm):"—",fonte:"BCB"},{nome:"IPCA",desc:"Inflação consumidor",valor:RATES.ipca12m?fP(RATES.ipca12m):"—",fonte:"BCB"},{nome:"INCC",desc:"Construção civil",valor:incc,fonte:"BCB 27574"}];
+  const[sim,setSim]=useState({valorImovel:"500000",financiamento:"400000",taxaJuros:"10",prazoMeses:"360",aluguel:"2500",reajuste:"igpm",reajustePersonalizado:""});
+  const set=(k,v)=>setSim(p=>({...p,[k]:v}));const[hovChart,setHovChart]=useState(null);
+  const vI=Number(sim.valorImovel)||0;const fin=Number(sim.financiamento)||0;const entrada=vI-fin;
+  const taxa=Number(sim.taxaJuros)||0;const n=Number(sim.prazoMeses)||360;const aluguelBase=Number(sim.aluguel)||0;
+  const reajAnual=sim.reajuste==="igpm"?RATES.igpm:sim.reajuste==="ipca"?RATES.ipca12m:sim.reajuste==="fgv8"?8:Number(sim.reajustePersonalizado)||5;
+  const iMes=(taxa/100)/12;const parcela=fin>0&&iMes>0?fin*(iMes*Math.pow(1+iMes,n))/(Math.pow(1+iMes,n)-1):fin>0?fin/n:0;
+  const totalPago=parcela*n+entrada;const totalJuros=totalPago-vI;
+  const chartPts=[];let saldoDevedor=fin;let aluguelAcum=0;let parcelaAcum=entrada;let breakEvenMes=null;
+  const reajMes=Math.pow(1+reajAnual/100,1/12)-1;
+  for(let m=1;m<=Math.max(n+240,480);m++){
+    const jurosM=saldoDevedor*iMes;const amortM=parcela-jurosM;
+    if(m<=n){saldoDevedor=Math.max(0,saldoDevedor-amortM);parcelaAcum+=parcela;}
+    aluguelAcum+=aluguelBase*Math.pow(1+reajMes,m-1);
+    if(!breakEvenMes&&aluguelAcum>=parcelaAcum)breakEvenMes=m;
+    if(m%12===0)chartPts.push({m,parcelaAcum,aluguelAcum,diff:aluguelAcum-parcelaAcum});
+    if(breakEvenMes&&m>breakEvenMes+24)break;if(m>600)break;
+  }
+  const maxChart=Math.max(...chartPts.map(p=>Math.max(p.parcelaAcum,p.aluguelAcum)),1);
+  const W=900,H=280,pd={t:20,r:30,b:40,l:90},cW=W-pd.l-pd.r,cH=H-pd.t-pd.b;
+  const xS=chartPts.length>1?cW/(chartPts.length-1):cW;const yy=v=>pd.t+cH*(1-v/maxChart);
+  return(<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}><div style={{fontSize:22,fontWeight:700}}>Imóveis</div><button style={S.btn()} onClick={fetchIdx} disabled={loading}>{loading?"...":"⟳ Índices"}</button></div>
+    <div style={S.card}><div style={{fontSize:12,fontWeight:700,color:P.textDim,marginBottom:12}}>Índices Imobiliários</div><div style={{display:"flex",gap:14,flexWrap:"wrap"}}>{indices.map(idx=>(<div key={idx.nome} style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:8,padding:"10px 14px",minWidth:140}}><div style={{fontSize:11,fontWeight:700,color:P.text}}>{idx.nome}</div><div style={{fontSize:10,color:P.textMuted}}>{idx.desc}</div><div style={{fontSize:18,fontWeight:700,color:P.accent}}>{idx.valor}</div></div>))}</div></div>
     <div style={S.card}>
-      <div style={{fontSize:14,fontWeight:700,marginBottom:16}}>Índices Imobiliários</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:14}}>
-        {indices.map(idx=>(<div key={idx.nome} style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:10,padding:"16px 20px"}}>
-          <div style={{fontSize:13,fontWeight:700,color:P.text,marginBottom:4}}>{idx.nome}</div>
-          <div style={{fontSize:10,color:P.textMuted,marginBottom:8}}>{idx.desc}</div>
-          <div style={{fontSize:22,fontWeight:700,color:P.accent}}>{idx.valor}</div>
-          <div style={{fontSize:9,color:P.textMuted,marginTop:4}}>Fonte: {idx.fonte}</div>
-        </div>))}
+      <div style={{fontSize:14,fontWeight:700,marginBottom:16}}>Simulador: Comprar vs Alugar</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:16,marginBottom:20}}>
+        <div><label style={S.lbl}>Valor do Imóvel (R$)</label><input style={S.i} type="number" step="1000" value={sim.valorImovel} onChange={e=>set("valorImovel",e.target.value)}/></div>
+        <div><label style={S.lbl}>Financiamento (R$)</label><input style={S.i} type="number" step="1000" value={sim.financiamento} onChange={e=>set("financiamento",e.target.value)}/></div>
+        <div><label style={S.lbl}>Entrada (R$)</label><div style={{...S.i,background:P.surfaceAlt,color:P.accent,fontWeight:700,display:"flex",alignItems:"center"}}>{fmt(entrada)}</div></div>
+        <div><label style={S.lbl}>Taxa CET (% a.a.)</label><input style={S.i} type="number" step="0.1" value={sim.taxaJuros} onChange={e=>set("taxaJuros",e.target.value)}/></div>
+        <div><label style={S.lbl}>Prazo (meses)</label><input style={S.i} type="number" step="12" value={sim.prazoMeses} onChange={e=>set("prazoMeses",e.target.value)}/></div>
+        <div><label style={S.lbl}>Aluguel equivalente (R$/mês)</label><input style={S.i} type="number" step="100" value={sim.aluguel} onChange={e=>set("aluguel",e.target.value)}/></div>
+        <div><label style={S.lbl}>Índice reajuste aluguel</label><select style={S.sel} value={sim.reajuste} onChange={e=>set("reajuste",e.target.value)}><option value="igpm">IGPM ({(RATES.igpm||3.5).toFixed(1)}% a.a.)</option><option value="ipca">IPCA ({(RATES.ipca12m||4.5).toFixed(1)}% a.a.)</option><option value="fgv8">FGV 8% a.a.</option><option value="personalizado">Personalizado</option></select></div>
+        {sim.reajuste==="personalizado"&&<div><label style={S.lbl}>Reajuste (% a.a.)</label><input style={S.i} type="number" step="0.5" value={sim.reajustePersonalizado} onChange={e=>set("reajustePersonalizado",e.target.value)}/></div>}
       </div>
+      {parcela>0&&(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14,marginBottom:20}}>
+        <div style={{...S.card,borderLeft:`4px solid ${P.blue}`}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Parcela Mensal</div><div style={{fontSize:22,fontWeight:700,color:P.blue}}>{fmt(parcela)}</div></div>
+        <div style={{...S.card,borderLeft:`4px solid ${P.orange}`}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Total Pago (compra)</div><div style={{fontSize:18,fontWeight:700,color:P.orange}}>{fmt(totalPago)}</div><div style={{fontSize:11,color:P.textDim}}>Juros: {fmt(totalJuros)}</div></div>
+        <div style={{...S.card,borderLeft:`4px solid ${P.red}`}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Aluguel acumulado (mesmo período)</div><div style={{fontSize:18,fontWeight:700,color:P.red}}>{fmt(chartPts[chartPts.findIndex(p=>p.m>=n)]?.aluguelAcum)}</div><div style={{fontSize:11,color:P.textDim}}>Reajuste: {reajAnual.toFixed(1)}% a.a.</div></div>
+        <div style={{...S.card,borderLeft:`4px solid ${breakEvenMes?P.accent:P.orange}`,background:breakEvenMes?P.accentGlow:P.orangeDim}}>
+          <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Ponto de Equilíbrio</div>
+          {breakEvenMes?<><div style={{fontSize:22,fontWeight:700,color:P.accent}}>{Math.floor(breakEvenMes/12)}a {breakEvenMes%12}m</div><div style={{fontSize:10,color:P.textDim}}>Mês {breakEvenMes} — compensou comprar</div></>:<><div style={{fontSize:16,fontWeight:700,color:P.orange}}>Não atingido</div><div style={{fontSize:10,color:P.textDim}}>Em {n} meses de financiamento</div></>}
+        </div>
+      </div>)}
+      {chartPts.length>1&&(<div>
+        <div style={{display:"flex",gap:16,marginBottom:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}><div style={{width:14,height:3,background:P.blue,borderRadius:2}}/><span style={{color:P.textDim}}>Custo total de comprar</span></div>
+          <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}><div style={{width:14,height:3,background:P.red,borderRadius:2}}/><span style={{color:P.textDim}}>Custo total de alugar</span></div>
+          {breakEvenMes&&<div style={{fontSize:11,color:P.accent,fontWeight:600}}>✓ Break-even no mês {breakEvenMes} ({Math.floor(breakEvenMes/12)}a {breakEvenMes%12}m)</div>}
+        </div>
+        <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" onMouseLeave={()=>setHovChart(null)}>
+          {[0,0.25,0.5,0.75,1].map(p=>(<g key={p}><line x1={pd.l} y1={pd.t+cH*(1-p)} x2={W-pd.r} y2={pd.t+cH*(1-p)} stroke={P.border} strokeWidth="1"/><text x={pd.l-8} y={pd.t+cH*(1-p)+4} textAnchor="end" fontSize="9" fill={P.textMuted}>{fmt(maxChart*p)}</text></g>))}
+          {chartPts.map((p,i)=>(<text key={i} x={pd.l+i*xS} y={H-8} textAnchor="middle" fontSize="8" fill={P.textMuted}>{Math.floor(p.m/12)}a</text>))}
+          {breakEvenMes&&(()=>{const bi=chartPts.findIndex(p=>p.m>=breakEvenMes);if(bi<0)return null;return<line key="be" x1={pd.l+bi*xS} y1={pd.t} x2={pd.l+bi*xS} y2={pd.t+cH} stroke={P.accent} strokeWidth="2" strokeDasharray="6,3" opacity="0.8"/>})()}
+          <path d={`M${pd.l},${yy(chartPts[0]?.parcelaAcum||0)} ${chartPts.map((p,i)=>`L${pd.l+i*xS},${yy(p.parcelaAcum)}`).join(" ")} L${pd.l+(chartPts.length-1)*xS},${pd.t+cH} L${pd.l},${pd.t+cH} Z`} fill={P.blue+"14"}/>
+          <polyline points={chartPts.map((p,i)=>`${pd.l+i*xS},${yy(p.parcelaAcum)}`).join(" ")} fill="none" stroke={P.blue} strokeWidth="2.5" strokeLinejoin="round"/>
+          <path d={`M${pd.l},${yy(chartPts[0]?.aluguelAcum||0)} ${chartPts.map((p,i)=>`L${pd.l+i*xS},${yy(p.aluguelAcum)}`).join(" ")} L${pd.l+(chartPts.length-1)*xS},${pd.t+cH} L${pd.l},${pd.t+cH} Z`} fill={P.red+"14"}/>
+          <polyline points={chartPts.map((p,i)=>`${pd.l+i*xS},${yy(p.aluguelAcum)}`).join(" ")} fill="none" stroke={P.red} strokeWidth="2.5" strokeLinejoin="round"/>
+          {chartPts.map((p,i)=>{const isH=hovChart===i;const cx=pd.l+i*xS;return(<g key={i}><rect x={cx-20} y={pd.t} width={40} height={cH} fill="transparent" onMouseEnter={()=>setHovChart(i)}/>{isH&&<><circle cx={cx} cy={yy(p.parcelaAcum)} r="5" fill={P.blue} stroke={P.bg} strokeWidth="2"/><circle cx={cx} cy={yy(p.aluguelAcum)} r="5" fill={P.red} stroke={P.bg} strokeWidth="2"/><rect x={Math.min(cx-65,W-pd.r-135)} y={pd.t} width={135} height={58} rx={5} fill={P.surface} stroke={P.border} strokeWidth="1"/><text x={Math.min(cx,W-pd.r-67)} y={pd.t+14} textAnchor="middle" fontSize="9" fontWeight="700" fill={P.textDim}>{Math.floor(p.m/12)} anos</text><text x={Math.min(cx,W-pd.r-67)} y={pd.t+28} textAnchor="middle" fontSize="9" fill={P.blue}>Compra: {fmt(p.parcelaAcum)}</text><text x={Math.min(cx,W-pd.r-67)} y={pd.t+42} textAnchor="middle" fontSize="9" fill={P.red}>Aluguel: {fmt(p.aluguelAcum)}</text><text x={Math.min(cx,W-pd.r-67)} y={pd.t+56} textAnchor="middle" fontSize="9" fill={p.diff>=0?P.accent:P.orange}>{p.diff>=0?"✓ "+fmt(p.diff):"Falta "+fmt(-p.diff)}</text></>}</g>);})}
+        </svg>
+      </div>)}
     </div>
-    <div style={{...S.card,textAlign:"center",padding:40}}><div style={{fontSize:14,color:P.textMuted}}>Simulador de financiamento em desenvolvimento</div></div>
   </div>);
 }
 

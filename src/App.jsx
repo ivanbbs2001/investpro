@@ -611,15 +611,18 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
     }
     return items;
   };
+  const readFileText=file=>new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsText(file,"UTF-8");});
   const handleImport=async(e)=>{const file=e.target.files[0];if(!file)return;
-    let text="";if(file.name.toLowerCase().endsWith(".pdf")){text=await extractPdfText(file);}else{text=await file.text();}
+    try{let text="";if(file.name.toLowerCase().endsWith(".pdf")){text=await extractPdfText(file);}else{text=typeof file.text==="function"?await file.text():await readFileText(file);}
     const items=parseTextToItems(text,file.name.toLowerCase(),false);
-    setImportItems(processImportItems(items));setShowImport(true);e.target.value="";
+    if(items.length===0){alert("Nenhum item encontrado. Verifique o formato do arquivo (CSV com ; ou tab, OFX, ou PDF).");}
+    setImportItems(processImportItems(items));if(items.length>0)setShowImport(true);}catch(err){alert("Erro ao ler arquivo: "+err.message);}e.target.value="";
   };
   const handleExtrato=async(e)=>{const file=e.target.files[0];if(!file)return;
-    let text="";if(file.name.toLowerCase().endsWith(".pdf")){text=await extractPdfText(file);}else{text=await file.text();}
+    try{let text="";if(file.name.toLowerCase().endsWith(".pdf")){text=await extractPdfText(file);}else{text=typeof file.text==="function"?await file.text():await readFileText(file);}
     const items=parseTextToItems(text,file.name.toLowerCase(),true);
-    setImportItems(processImportItems(items));setShowImport(true);e.target.value="";
+    if(items.length===0){alert("Nenhum item encontrado. Verifique o formato do arquivo.");}
+    setImportItems(processImportItems(items));if(items.length>0)setShowImport(true);}catch(err){alert("Erro ao ler arquivo: "+err.message);}e.target.value="";
   };
   const guessCategory=desc=>{const d=desc.toUpperCase();
     if(d.includes("MERCADO")||d.includes("SUPERMERCADO")||d.includes("ATACADAO")||d.includes("CONDOR")||d.includes("MUFFATO")||d.includes("MUFFATAO")||d.includes("IRANI")||d.includes("FESTVAL")||d.includes("BEAL")||d.includes("COMERCIAL"))return"Mercado";

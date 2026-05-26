@@ -11,7 +11,7 @@ const TABS_I=[{id:"rf",l:"Renda Fixa",ic:"▤"},{id:"inco",l:"INCO",ic:"⌂"},{i
 const TABS_G=[{id:"orc",l:"Orçamento",ic:"☰"},{id:"irpf",l:"IRPF",ic:"📋"},{id:"prf",l:"PRF",ic:"📊"},{id:"imoveis",l:"Imóveis",ic:"🏠"}];
 const TABS_S=[{id:"ind",l:"Índices",ic:"≡"},{id:"cfg",l:"Config",ic:"⚙"}];
 const ALL_T=[...TABS_M,...TABS_I,...TABS_G,...TABS_S];
-const SK={rf:"ip8-rf",ac:"ip8-ac",etf:"ip8-etf",fii:"ip8-fii",cr:"ip8-cr",ind:"ip8-ind",indLF:"ip8-indLF",ap:"ip8-ap",orc:"ip8-orc",inco:"ip8-inco",banks:"ip8-banks",theme:"ip8-theme",apMeta:"ip8-apMeta",fiiMkt:"ip8-fiiMkt",rates:"ip8-rates",evo:"ip8-evo",cryptoQ:"ip8-cryptoQ",prfRef:"ip8-prfRef",tdApos:"ip8-tdApos",tdLiza:"ip8-tdLiza"};
+const SK={rf:"ip8-rf",ac:"ip8-ac",etf:"ip8-etf",fii:"ip8-fii",cr:"ip8-cr",ind:"ip8-ind",indLF:"ip8-indLF",ap:"ip8-ap",orc:"ip8-orc",inco:"ip8-inco",banks:"ip8-banks",theme:"ip8-theme",apMeta:"ip8-apMeta",fiiMkt:"ip8-fiiMkt",rates:"ip8-rates",evo:"ip8-evo",cryptoQ:"ip8-cryptoQ",prfRef:"ip8-prfRef",tdApos:"ip8-tdApos",tdLiza:"ip8-tdLiza",simImo:"ip8-simImo",simProj:"ip8-simProj",simPrf:"ip8-simPrf"};
 const DEF_PRF_REF={diariaInterior:335,diariaCapitais:380,diariaSPRJ:425,horaGECC:165.78,horaADFRON:11.50,diaADFRON:92};
 function ld(k,fb){try{const r=localStorage.getItem(k);return r?JSON.parse(r):fb;}catch{return fb;}}
 function sv(k,d){try{localStorage.setItem(k,JSON.stringify(d));}catch(e){console.error(e);}}
@@ -1155,13 +1155,27 @@ function SimTab({retPctMensal}){const P=useT();const S=useS();
 }
 
 /* PRF TAB — Diárias + ADFRON/GECC + Aposentadoria */
-function PrfTab({prfRef}){const P=useT();const S=useS();const[sub,setSub]=useState("diarias");
+function PrfTab({prfRef,sim,setSim,defSim}){const P=useT();const S=useS();const[sub,setSub]=useState("diarias");
   const ref=prfRef||DEF_PRF_REF;
-  // Diárias
-  const[dIni,setDIni]=useState("");const[dFim,setDFim]=useState("");const[dTipo,setDTipo]=useState("Interior");
-  const[dHotel,setDHotel]=useState("");const[dLimpeza,setDLimpeza]=useState("");
-  const[dCarroProprio,setDCarroProprio]=useState(false);const[dDistKm,setDDistKm]=useState("");const[dCombustivel,setDCombustivel]=useState("6.50");const[dConsumo,setDConsumo]=useState("10");const[dPlantoes,setDPlantoes]=useState("1");
-  const[dGecc,setDGecc]=useState(false);const[dHorasGecc,setDHorasGecc]=useState("");
+  const sf=(k,v)=>setSim(p=>({...p,[k]:v}));
+  // Diárias — read from sim, write via sf()
+  const dIni=sim?.dIni??"";const setDIni=v=>sf("dIni",v);
+  const dFim=sim?.dFim??"";const setDFim=v=>sf("dFim",v);
+  const dTipo=sim?.dTipo??"Interior";const setDTipo=v=>sf("dTipo",v);
+  const dHotel=sim?.dHotel??"";const setDHotel=v=>sf("dHotel",v);
+  const dLimpeza=sim?.dLimpeza??"";const setDLimpeza=v=>sf("dLimpeza",v);
+  const dCarroProprio=sim?.dCarroProprio??false;const setDCarroProprio=v=>sf("dCarroProprio",v);
+  const dDistKm=sim?.dDistKm??"";const setDDistKm=v=>sf("dDistKm",v);
+  const dCombustivel=sim?.dCombustivel??"6.50";const setDCombustivel=v=>sf("dCombustivel",v);
+  const dConsumo=sim?.dConsumo??"10";const setDConsumo=v=>sf("dConsumo",v);
+  const dPlantoes=sim?.dPlantoes??"1";const setDPlantoes=v=>sf("dPlantoes",v);
+  const dGecc=sim?.dGecc??false;const setDGecc=v=>sf("dGecc",v);
+  const dHorasGecc=sim?.dHorasGecc??"";const setDHorasGecc=v=>sf("dHorasGecc",v);
+  const adDias=sim?.adDias??"";const setAdDias=v=>sf("adDias",v);
+  const gcHoras=sim?.gcHoras??"";const setGcHoras=v=>sf("gcHoras",v);
+  const apNasc=sim?.apNasc??"";const setApNasc=v=>sf("apNasc",v);
+  const apEntrada=sim?.apEntrada??"";const setApEntrada=v=>sf("apEntrada",v);
+  const apFator=sim?.apFator??"1.0";const setApFator=v=>sf("apFator",v);
   // NETWORKDAYS helper (count weekdays between two dates)
   const networkDays=(start,end)=>{if(!start||!end)return 0;let d=new Date(start),e=new Date(end),count=0;while(d<=e){const dow=d.getDay();if(dow!==0&&dow!==6)count++;d.setDate(d.getDate()+1);}return count;};
   // EOMONTH helper
@@ -1192,13 +1206,11 @@ function PrfTab({prfRef}){const P=useT();const S=useS();const[sub,setSub]=useSta
   const adfronPerdido=diasInteiros*(ref.diaADFRON||92);
   const saldoVsAdfron=dSaldoTotal-adfronPerdido;
   // ADFRON/GECC
-  const[adDias,setAdDias]=useState("");const[gcHoras,setGcHoras]=useState("");
   const adTotal=(Number(adDias)||0)*(ref.diaADFRON||92);
   const gcBruto=(Number(gcHoras)||0)*(ref.horaGECC||165.78);
   const gcLiq=gcBruto*(1-0.275);
   const adWin=adTotal>=gcLiq;
   // Aposentadoria
-  const[apNasc,setApNasc]=useState("");const[apEntrada,setApEntrada]=useState("");const[apFator,setApFator]=useState("1.0");
   const calcApos=(targetDate)=>{const now=new Date();const t=new Date(targetDate);if(isNaN(t.getTime()))return"—";const diff=t-now;if(diff<=0)return"Atingido!";const totalDias=Math.floor(diff/(864e5));const anos=Math.floor(totalDias/365);const meses=Math.floor((totalDias%365)/30);const dias=totalDias%30;return`${anos}a ${meses}m ${dias}d`;};
   // With factor: target date comes CLOSER by factor (fewer effective days to wait)
   const calcDataFator=(targetDate,fator)=>{const now=new Date();const t=new Date(targetDate);if(isNaN(t.getTime()))return{text:"—",date:null};const diff=t-now;if(diff<=0)return{text:"Atingido!",date:null};const totalDias=Math.floor(diff/(864e5));const diasFator=Math.floor(totalDias/Number(fator||1));const novaData=new Date(now.getTime()+diasFator*864e5);const anos=Math.floor(diasFator/365);const meses=Math.floor((diasFator%365)/30);const dias=diasFator%30;return{text:`${anos}a ${meses}m ${dias}d`,date:novaData.toISOString().slice(0,10)};};
@@ -1208,7 +1220,7 @@ function PrfTab({prfRef}){const P=useT();const S=useS();const[sub,setSub]=useSta
   const tp30f=tempo30?calcDataFator(tempo30,apFator):null;
 
   return(<div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}><div style={{fontSize:22,fontWeight:700}}>PRF</div><div style={{display:"flex",gap:8}}><button style={sub==="diarias"?S.btnA():S.btnO} onClick={()=>setSub("diarias")}>Diárias</button><button style={sub==="adfron"?S.btnA():S.btnO} onClick={()=>setSub("adfron")}>ADFRON/GECC</button><button style={sub==="apos"?S.btnA():S.btnO} onClick={()=>setSub("apos")}>Aposentadoria</button></div></div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}><div style={{fontSize:22,fontWeight:700}}>PRF</div><div style={{display:"flex",gap:8}}><button style={sub==="diarias"?S.btnA():S.btnO} onClick={()=>setSub("diarias")}>Diárias</button><button style={sub==="adfron"?S.btnA():S.btnO} onClick={()=>setSub("adfron")}>ADFRON/GECC</button><button style={sub==="apos"?S.btnA():S.btnO} onClick={()=>setSub("apos")}>Aposentadoria</button><button style={S.btnO} onClick={()=>setSim(defSim)}>✕ Limpar</button></div></div>
 
     {sub==="diarias"&&(<div style={S.card}>
       <div style={{fontSize:14,fontWeight:700,marginBottom:16}}>Diárias</div>
@@ -1322,11 +1334,10 @@ function TDTab({apos,setApos,liza,setLiza}){const P=useT();const S=useS();const[
 }
 
 /* IMÓVEIS TAB — with real estate indices + fetch */
-function ImoveisTab(){const P=useT();const S=useS();
+function ImoveisTab({sim,setSim,defSim}){const P=useT();const S=useS();
   const[incc,setIncc]=useState("—");const[fipezap,setFipezap]=useState("—");const[loading,setLoading]=useState(false);
   const fetchIdx=async()=>{setLoading(true);try{const r=await fetch("https://api.bcb.gov.br/dados/serie/bcdata.sgs.27574/dados/ultimos/1?formato=json");if(r.ok){const d=await r.json();if(d[0])setIncc(d[0].valor);}const r2=await fetch("https://api.bcb.gov.br/dados/serie/bcdata.sgs.192/dados/ultimos/1?formato=json");if(r2.ok){const d2=await r2.json();if(d2[0])setFipezap(d2[0].valor+"% (INCC-DI)");}}catch(e){console.error(e);}setLoading(false);};
   const indices=[{nome:"FIPEZAP/INCC-DI",desc:"Índice construção",valor:fipezap,fonte:"BCB 192"},{nome:"IGPM",desc:"Preços mercado",valor:RATES.igpm?fP(RATES.igpm):"—",fonte:"BCB"},{nome:"IPCA",desc:"Inflação consumidor",valor:RATES.ipca12m?fP(RATES.ipca12m):"—",fonte:"BCB"},{nome:"INCC",desc:"Construção civil",valor:incc,fonte:"BCB 27574"}];
-  const[sim,setSim]=useState({valorImovel:"500000",financiamento:"400000",taxaJuros:"10",prazoMeses:"360",aluguel:"2500",reajuste:"igpm",reajustePersonalizado:""});
   const set=(k,v)=>setSim(p=>({...p,[k]:v}));const[hovChart,setHovChart]=useState(null);
   const vI=Number(sim.valorImovel)||0;const fin=Number(sim.financiamento)||0;const entrada=vI-fin;
   const taxa=Number(sim.taxaJuros)||0;const n=Number(sim.prazoMeses)||360;const aluguelBase=Number(sim.aluguel)||0;
@@ -1347,7 +1358,7 @@ function ImoveisTab(){const P=useT();const S=useS();
   const W=900,H=280,pd={t:20,r:30,b:40,l:90},cW=W-pd.l-pd.r,cH=H-pd.t-pd.b;
   const xS=chartPts.length>1?cW/(chartPts.length-1):cW;const yy=v=>pd.t+cH*(1-v/maxChart);
   return(<div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}><div style={{fontSize:22,fontWeight:700}}>Imóveis</div><button style={S.btn()} onClick={fetchIdx} disabled={loading}>{loading?"...":"⟳ Índices"}</button></div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}><div style={{fontSize:22,fontWeight:700}}>Imóveis</div><button style={S.btn()} onClick={fetchIdx} disabled={loading}>{loading?"...":"⟳ Índices"}</button><button style={S.btnO} onClick={()=>setSim(defSim)}>✕ Limpar</button></div>
     <div style={S.card}><div style={{fontSize:12,fontWeight:700,color:P.textDim,marginBottom:12}}>Índices Imobiliários</div><div style={{display:"flex",gap:14,flexWrap:"wrap"}}>{indices.map(idx=>(<div key={idx.nome} style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:8,padding:"10px 14px",minWidth:140}}><div style={{fontSize:11,fontWeight:700,color:P.text}}>{idx.nome}</div><div style={{fontSize:10,color:P.textMuted}}>{idx.desc}</div><div style={{fontSize:18,fontWeight:700,color:P.accent}}>{idx.valor}</div></div>))}</div></div>
     <div style={S.card}>
       <div style={{fontSize:14,fontWeight:700,marginBottom:16}}>Simulador: Comprar vs Alugar</div>
@@ -1447,12 +1458,12 @@ function CompTab(){const P=useT();const S=useS();
 }
 
 /* PROJEÇÕES — Aposentadoria Antecipada */
-function ProjecoesTab({tG,tRM,retPct,orc}){const P=useT();const S=useS();
-  const[idadeAtual,setIdadeAtual]=useState("40");
-  const[idadeApos,setIdadeApos]=useState("55");
-  const[aporteMensal,setAporteMensal]=useState("");
-  const[ipca,setIpca]=useState(String(RATES.ipca12m||4.5));
-  const[inflSaude,setInflSaude]=useState("12");// plano de saúde sobe ~12% ao ano historicamente
+function ProjecoesTab({tG,tRM,retPct,orc,sim,setSim,defSim}){const P=useT();const S=useS();
+  const idadeAtual=sim?.idadeAtual??"40";const setIdadeAtual=v=>setSim(p=>({...p,idadeAtual:v}));
+  const idadeApos=sim?.idadeApos??"55";const setIdadeApos=v=>setSim(p=>({...p,idadeApos:v}));
+  const aporteMensal=sim?.aporteMensal??"";const setAporteMensal=v=>setSim(p=>({...p,aporteMensal:v}));
+  const ipca=sim?.ipca??String(RATES.ipca12m||4.5);const setIpca=v=>setSim(p=>({...p,ipca:v}));
+  const inflSaude=sim?.inflSaude??"12";const setInflSaude=v=>setSim(p=>({...p,inflSaude:v}));
   const[hovGraf,setHovGraf]=useState(null);
 
   // Get gastos fixos from last month with data
@@ -1506,7 +1517,7 @@ function ProjecoesTab({tG,tRM,retPct,orc}){const P=useT();const S=useS();
   const yy=v=>pd.t+cH*(1-v/maxPat);
 
   return(<div>
-    <div style={{fontSize:22,fontWeight:700,marginBottom:24}}>Projeção — Aposentadoria Antecipada</div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}><div style={{fontSize:22,fontWeight:700}}>Projeção — Aposentadoria Antecipada</div><button style={S.btnO} onClick={()=>setSim(defSim)}>✕ Limpar</button></div>
     {/* Inputs */}
     <div style={S.card}>
       <div style={{fontSize:13,fontWeight:700,color:P.textDim,marginBottom:16}}>Parâmetros</div>
@@ -1754,14 +1765,20 @@ export default function App(){
   const[fiiMkt,setFiiMkt]=useState(()=>ld(SK.fiiMkt,FII_MKT_DEF));
   const[evo,setEvo]=useState(()=>ld(SK.evo,[]));
   const[tdApos,setTdApos]=useState(()=>ld(SK.tdApos,[]));const[tdLiza,setTdLiza]=useState(()=>ld(SK.tdLiza,[]));
+  const DEF_SIM_IMO={valorImovel:"500000",financiamento:"400000",taxaJuros:"10",prazoMeses:"360",aluguel:"2500",reajuste:"igpm",reajustePersonalizado:""};
+  const DEF_SIM_PRF={dIni:"",dFim:"",dTipo:"Interior",dHotel:"",dLimpeza:"",dCarroProprio:false,dDistKm:"",dCombustivel:"6.50",dConsumo:"10",dPlantoes:"1",dGecc:false,dHorasGecc:"",adDias:"",gcHoras:"",apNasc:"",apEntrada:"",apFator:"1.0"};
+  const DEF_SIM_PROJ={idadeAtual:"40",idadeApos:"55",aporteMensal:"",ipca:String(RATES.ipca12m||4.5),inflSaude:"12"};
+  const[simImo,setSimImo]=useState(()=>ld(SK.simImo,DEF_SIM_IMO));
+  const[simPrf,setSimPrf]=useState(()=>ld(SK.simPrf,DEF_SIM_PRF));
+  const[simProj,setSimProj]=useState(()=>ld(SK.simProj,DEF_SIM_PROJ));
   useEffect(()=>{if(userId)loadFromFirestore(userId);},[]);
-  const loadFromFirestore=async(uid)=>{try{setSyncStatus("Sincronizando...");const snap=await getDoc(doc(db,"investpro",uid));if(snap.exists()){const d=snap.data();if(d.rf)setRf(d.rf);if(d.inco)setInco(d.inco);if(d.ac)setAc(d.ac);if(d.etfs)setEtfs(d.etfs);if(d.fiis)setFiis(d.fiis);if(d.cr)setCr(d.cr);if(d.indices)setIndices(d.indices);if(d.aportes)setAportes(d.aportes);if(d.orc)setOrc(d.orc);if(d.banks)setBanks(d.banks);if(d.apMeta!=null)setApMeta(d.apMeta);if(d.fiiMkt)setFiiMkt(d.fiiMkt);if(d.evo)setEvo(d.evo);if(d.tdApos)setTdApos(d.tdApos);if(d.tdLiza)setTdLiza(d.tdLiza);if(d.theme!=null)setIsDark(d.theme);if(d.font)setFont(d.font);if(d.prfRef)setPrfRef(d.prfRef);}setSyncStatus("\u2713 Sincronizado");setTimeout(()=>setSyncStatus(""),3000);}catch(e){console.error(e);setSyncStatus("Erro sync");}};
-  const saveTimer=useRef(null);const saveToFirestore=useCallback(()=>{if(!userId)return;if(saveTimer.current)clearTimeout(saveTimer.current);saveTimer.current=setTimeout(async()=>{try{await setDoc(doc(db,"investpro",userId),{rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,theme:isDark,font,prfRef,updatedAt:new Date().toISOString()},{merge:true});}catch(e){console.error(e);}},2000);},[userId,rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,isDark,font,prfRef]);
-  useEffect(()=>{sv(SK.theme,isDark);},[isDark]);useEffect(()=>{sv("ip8-font",font);},[font]);useEffect(()=>{sv(SK.rf,rf);},[rf]);useEffect(()=>{sv(SK.inco,inco);},[inco]);useEffect(()=>{sv(SK.ac,ac);},[ac]);useEffect(()=>{sv(SK.etf,etfs);},[etfs]);useEffect(()=>{sv(SK.fii,fiis);},[fiis]);useEffect(()=>{sv(SK.cr,cr);},[cr]);useEffect(()=>{sv(SK.ind,indices);},[indices]);useEffect(()=>{sv(SK.ap,aportes);},[aportes]);useEffect(()=>{sv(SK.orc,orc);},[orc]);useEffect(()=>{sv(SK.banks,banks);},[banks]);useEffect(()=>{sv(SK.apMeta,apMeta);},[apMeta]);useEffect(()=>{sv(SK.fiiMkt,fiiMkt);},[fiiMkt]);useEffect(()=>{sv(SK.evo,evo);},[evo]);useEffect(()=>{sv(SK.prfRef,prfRef);},[prfRef]);useEffect(()=>{sv(SK.tdApos,tdApos);},[tdApos]);useEffect(()=>{sv(SK.tdLiza,tdLiza);},[tdLiza]);
-  useEffect(()=>{if(userId)saveToFirestore();},[rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,isDark,font,prfRef,saveToFirestore]);
+  const loadFromFirestore=async(uid)=>{try{setSyncStatus("Sincronizando...");const snap=await getDoc(doc(db,"investpro",uid));if(snap.exists()){const d=snap.data();if(d.rf)setRf(d.rf);if(d.inco)setInco(d.inco);if(d.ac)setAc(d.ac);if(d.etfs)setEtfs(d.etfs);if(d.fiis)setFiis(d.fiis);if(d.cr)setCr(d.cr);if(d.indices)setIndices(d.indices);if(d.aportes)setAportes(d.aportes);if(d.orc)setOrc(d.orc);if(d.banks)setBanks(d.banks);if(d.apMeta!=null)setApMeta(d.apMeta);if(d.fiiMkt)setFiiMkt(d.fiiMkt);if(d.evo)setEvo(d.evo);if(d.tdApos)setTdApos(d.tdApos);if(d.tdLiza)setTdLiza(d.tdLiza);if(d.simImo)setSimImo(d.simImo);if(d.simPrf)setSimPrf(d.simPrf);if(d.simProj)setSimProj(d.simProj);if(d.theme!=null)setIsDark(d.theme);if(d.font)setFont(d.font);if(d.prfRef)setPrfRef(d.prfRef);}setSyncStatus("\u2713 Sincronizado");setTimeout(()=>setSyncStatus(""),3000);}catch(e){console.error(e);setSyncStatus("Erro sync");}};
+  const saveTimer=useRef(null);const saveToFirestore=useCallback(()=>{if(!userId)return;if(saveTimer.current)clearTimeout(saveTimer.current);saveTimer.current=setTimeout(async()=>{try{await setDoc(doc(db,"investpro",userId),{rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,simImo,simPrf,simProj,theme:isDark,font,prfRef,updatedAt:new Date().toISOString()},{merge:true});}catch(e){console.error(e);}},2000);},[userId,rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,simImo,simPrf,simProj,isDark,font,prfRef]);
+  useEffect(()=>{sv(SK.theme,isDark);},[isDark]);useEffect(()=>{sv("ip8-font",font);},[font]);useEffect(()=>{sv(SK.rf,rf);},[rf]);useEffect(()=>{sv(SK.inco,inco);},[inco]);useEffect(()=>{sv(SK.ac,ac);},[ac]);useEffect(()=>{sv(SK.etf,etfs);},[etfs]);useEffect(()=>{sv(SK.fii,fiis);},[fiis]);useEffect(()=>{sv(SK.cr,cr);},[cr]);useEffect(()=>{sv(SK.ind,indices);},[indices]);useEffect(()=>{sv(SK.ap,aportes);},[aportes]);useEffect(()=>{sv(SK.orc,orc);},[orc]);useEffect(()=>{sv(SK.banks,banks);},[banks]);useEffect(()=>{sv(SK.apMeta,apMeta);},[apMeta]);useEffect(()=>{sv(SK.fiiMkt,fiiMkt);},[fiiMkt]);useEffect(()=>{sv(SK.evo,evo);},[evo]);useEffect(()=>{sv(SK.prfRef,prfRef);},[prfRef]);useEffect(()=>{sv(SK.tdApos,tdApos);},[tdApos]);useEffect(()=>{sv(SK.tdLiza,tdLiza);},[tdLiza]);useEffect(()=>{sv(SK.simImo,simImo);},[simImo]);useEffect(()=>{sv(SK.simPrf,simPrf);},[simPrf]);useEffect(()=>{sv(SK.simProj,simProj);},[simProj]);
+  useEffect(()=>{if(userId)saveToFirestore();},[rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,simImo,simPrf,simProj,isDark,font,prfRef,saveToFirestore]);
   useEffect(()=>{const c=ld(SK.rates,null);if(c)RATES=c;},[]);
   const allState=()=>({rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,theme:isDark,prfRef,font});
-  const loadState=d=>{if(d.rf)setRf(d.rf);if(d.inco)setInco(d.inco);if(d.ac)setAc(d.ac);if(d.etfs)setEtfs(d.etfs);if(d.fiis)setFiis(d.fiis);if(d.cr)setCr(d.cr);if(d.indices)setIndices(d.indices);if(d.aportes)setAportes(d.aportes);if(d.orc)setOrc(d.orc);if(d.banks)setBanks(d.banks);if(d.apMeta!=null)setApMeta(d.apMeta);if(d.fiiMkt)setFiiMkt(d.fiiMkt);if(d.evo)setEvo(d.evo);if(d.tdApos)setTdApos(d.tdApos);if(d.tdLiza)setTdLiza(d.tdLiza);if(d.theme!=null)setIsDark(d.theme);if(d.prfRef)setPrfRef(d.prfRef);};
+  const loadState=d=>{if(d.rf)setRf(d.rf);if(d.inco)setInco(d.inco);if(d.ac)setAc(d.ac);if(d.etfs)setEtfs(d.etfs);if(d.fiis)setFiis(d.fiis);if(d.cr)setCr(d.cr);if(d.indices)setIndices(d.indices);if(d.aportes)setAportes(d.aportes);if(d.orc)setOrc(d.orc);if(d.banks)setBanks(d.banks);if(d.apMeta!=null)setApMeta(d.apMeta);if(d.fiiMkt)setFiiMkt(d.fiiMkt);if(d.evo)setEvo(d.evo);if(d.tdApos)setTdApos(d.tdApos);if(d.tdLiza)setTdLiza(d.tdLiza);if(d.simImo)setSimImo(d.simImo);if(d.simPrf)setSimPrf(d.simPrf);if(d.simProj)setSimProj(d.simProj);if(d.theme!=null)setIsDark(d.theme);if(d.prfRef)setPrfRef(d.prfRef);};
   const P=isDark==="dark"||isDark===true?DARK:isDark==="industrial"?INDUSTRIAL:isDark==="planner"?PLANNER:isDark==="industrial-light"?INDUSTRIAL_LIGHT:LIGHT;
   const[clock,setClock]=useState("");const[todayStr,setTodayStr]=useState("");const[weekDay,setWeekDay]=useState("");
   useEffect(()=>{const t=setInterval(()=>{const n=new Date();setClock(n.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}));setTodayStr(n.toLocaleDateString("pt-BR"));setWeekDay(n.toLocaleDateString("pt-BR",{weekday:"long"}));},1000);return()=>clearInterval(t);},[]);
@@ -1776,7 +1793,7 @@ export default function App(){
   const _dFi=fiis.reduce((a,i)=>a+(Number(i.dividendoMensal)||0),0);
   const _tG=rf.reduce((a,i)=>a+(Number(i.valor)||0),0)+inco.reduce((a,i)=>a+(Number(i.valor)||0),0)+ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+etfs.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+cr.reduce((a,i)=>a+(Number(i.valorInvestido)||0),0);
   const _tRM=_mRF+_mIN+_dFi;const _retPct=_tG>0?((_tRM/_tG)*100):0;
-  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rf} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc}/>;case"comp":return<CompTab/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"proj":return<ProjecoesTab tG={_tG} tRM={_tRM} retPct={_retPct} orc={orc}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"td":return<TDTab apos={tdApos} setApos={setTdApos} liza={tdLiza} setLiza={setTdLiza}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rf} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef}/>;case"imoveis":return<ImoveisTab/>;case"cfg":return<CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/>;default:return null;}};
+  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rf} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc}/>;case"comp":return<CompTab/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"proj":return<ProjecoesTab tG={_tG} tRM={_tRM} retPct={_retPct} orc={orc} sim={simProj} setSim={setSimProj} defSim={DEF_SIM_PROJ}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"td":return<TDTab apos={tdApos} setApos={setTdApos} liza={tdLiza} setLiza={setTdLiza}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rf} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef} sim={simPrf} setSim={setSimPrf} defSim={DEF_SIM_PRF}/>;case"imoveis":return<ImoveisTab sim={simImo} setSim={setSimImo} defSim={DEF_SIM_IMO}/>;case"cfg":return<CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/>;default:return null;}};
   const isDarkSidebar=P.sidebarBg&&parseInt(P.sidebarBg.replace("#",""),16)<0x888888;
   const sbText=isDarkSidebar?"#e8e0d6":P.text;const sbTextDim=isDarkSidebar?"#a09890":P.textDim;const sbTextMuted=isDarkSidebar?"#6b635a":P.textMuted;const sbHover=isDarkSidebar?"rgba(255,255,255,0.08)":P.hover;const sbAccentGlow=isDarkSidebar?"rgba(196,98,42,0.20)":P.accentGlow;
   function SBItem({t}){const[h,setH]=useState(false);const active=tab===t.id;return(<div onClick={()=>setTab(t.id)} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 16px",cursor:"pointer",fontSize:12,fontWeight:active?600:400,color:active?P.accent:h?sbText:sbTextDim,background:active?sbAccentGlow:h?sbHover:"transparent",borderRight:active?`2px solid ${P.accent}`:"2px solid transparent",transition:"all 0.2s ease",borderRadius:h&&!active?"6px 0 0 6px":"0",transform:h&&!active?"translateX(4px)":"none"}}><span style={{fontSize:14,opacity:active?1:h?1:0.7,transition:"all 0.2s ease"}}>{t.ic}</span>{t.l}</div>);}

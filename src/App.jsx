@@ -236,13 +236,50 @@ function SC({label,value,color,dim}){const P=useT();return(<div style={{backgrou
 function TR({children,onClick,baseBg}){const P=useT();const[h,setH]=useState(false);return(<tr style={{cursor:"pointer",background:h?P.hover:baseBg||"transparent",transition:"background 0.15s"}} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} onClick={onClick}>{children}</tr>);}
 function STH({label,field,sb,sd,onS,style}){const P=useT();const a=sb===field;return(<th style={style} onClick={()=>onS(field)}>{label} {a&&<span style={{color:P.accent}}>{sd==="asc"?"▲":"▼"}</span>}</th>);}
 const PC=["#3b82f6","#10b981","#f59e0b","#a855f7","#f97316","#06b6d4","#ef4444","#ec4899","#84cc16","#6366f1","#14b8a6","#0ea5e9","#8b5cf6","#d946ef","#78716c","#64748b","#ca8a04","#059669","#dc2626","#ea580c","#d97706","#65a30d","#0d9488","#7c3aed","#a3a3a3"];
-function Pie({data,size=260}){const P=useT();const[hover,setHover]=useState(null);const total=data.reduce((a,d)=>a+d.value,0);if(total<=0)return null;let cum=0;const r=size/2-4,cx=size/2,cy=size/2;
+function Pie({data,size=260}){const P=useT();const[hover,setHover]=useState(null);const[mounted,setMounted]=useState(false);
+  useEffect(()=>{const t=setTimeout(()=>setMounted(true),30);return()=>clearTimeout(t);},[]);
+  const total=data.reduce((a,d)=>a+d.value,0);if(total<=0)return null;let cum=0;const r=size/2-4,cx=size/2,cy=size/2;
   const sl=data.filter(d=>d.value>0).map((d,i)=>{const pct=d.value/total;const sa=cum;cum+=pct*2*Math.PI;const ea=cum;const la=pct>0.5?1:0;
     if(pct>=0.999)return{p:`M ${cx} ${cy-r} A ${r} ${r} 0 1 1 ${cx-0.01} ${cy-r} Z`,c:d.color||PC[i%PC.length],l:d.label,pct,val:d.value,idx:i};
     const x1=cx+r*Math.cos(sa-Math.PI/2),y1=cy+r*Math.sin(sa-Math.PI/2),x2=cx+r*Math.cos(ea-Math.PI/2),y2=cy+r*Math.sin(ea-Math.PI/2);
-    return{p:`M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${la} 1 ${x2} ${y2} Z`,c:d.color||PC[i%PC.length],l:d.label,pct,val:d.value,idx:i};
+    return{p:`M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${la} 1 ${x2} ${y2} Z`,c:d.color||PC[i%PC.length],l:d.label,pct,val:d.value,idx:i,midA:(sa+ea)/2};
   });
-  return(<div style={{display:"flex",alignItems:"center",gap:20,flexWrap:"wrap"}}><div style={{position:"relative"}}><svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>{sl.map((s,i)=>(<path key={i} d={s.p} fill={s.c} stroke={P.bg} strokeWidth="2" opacity={hover===null||hover===s.idx?1:0.4} style={{transition:"opacity 0.15s",cursor:"pointer"}} onMouseEnter={()=>setHover(s.idx)} onMouseLeave={()=>setHover(null)}/>))}</svg>{hover!==null&&sl[hover]&&(<div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center",pointerEvents:"none"}}><div style={{fontSize:13,fontWeight:700,color:P.text}}>{sl[hover].l}</div><div style={{fontSize:16,fontWeight:700,color:sl[hover].c}}>{fmt(sl[hover].val)}</div><div style={{fontSize:11,color:P.textDim}}>{(sl[hover].pct*100).toFixed(1)}%</div></div>)}</div><div style={{display:"flex",flexDirection:"column",gap:4}}>{sl.map((s,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,opacity:hover===null||hover===s.idx?1:0.5,cursor:"pointer",transition:"opacity 0.15s"}} onMouseEnter={()=>setHover(s.idx)} onMouseLeave={()=>setHover(null)}><div style={{width:10,height:10,borderRadius:2,background:s.c,flexShrink:0}}/><span style={{color:P.textDim}}>{s.l}</span><span style={{fontWeight:600}}>{fmt(s.val)}</span><span style={{color:P.textMuted}}>({(s.pct*100).toFixed(1)}%)</span></div>))}</div></div>);
+  // Animation: scale each slice from center on mount
+  const animStyle=(s,i)=>({
+    transformOrigin:`${cx}px ${cy}px`,
+    transform:mounted?"scale(1)":"scale(0)",
+    transition:`transform 0.5s cubic-bezier(0.34,1.56,0.64,1) ${i*60}ms`,
+    cursor:"pointer",
+    filter:hover===s.idx?"drop-shadow(0 2px 6px rgba(0,0,0,0.3))":"none",
+    opacity:hover===null||hover===s.idx?1:0.55,
+  });
+  return(<div style={{display:"flex",alignItems:"center",gap:20,flexWrap:"wrap"}}>
+    <div style={{position:"relative"}}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {sl.map((s,i)=>{
+          const isHov=hover===s.idx;
+          // Slightly expand hovered slice
+          const nudge=isHov?8:0;
+          const mx=cx+nudge*Math.cos(s.midA-Math.PI/2);const my=cy+nudge*Math.sin(s.midA-Math.PI/2);
+          const dPath=isHov&&s.midA!==undefined?s.p.replace(`M ${cx} ${cy}`,`M ${mx.toFixed(1)} ${my.toFixed(1)}`):s.p;
+          return(<path key={i} d={dPath} fill={s.c} stroke={P.bg} strokeWidth={isHov?"3":"2"} style={{...animStyle(s,i),transition:`transform 0.5s cubic-bezier(0.34,1.56,0.64,1) ${i*60}ms, opacity 0.15s, filter 0.15s`}} onMouseEnter={()=>setHover(s.idx)} onMouseLeave={()=>setHover(null)}/>);
+        })}
+      </svg>
+      {hover!==null&&sl[hover]&&(<div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center",pointerEvents:"none",animation:"numPop 0.2s ease-out"}}>
+        <div style={{fontSize:11,fontWeight:700,color:P.text,marginBottom:2}}>{sl[hover].l}</div>
+        <div style={{fontSize:15,fontWeight:700,color:sl[hover].c}}>{fmt(sl[hover].val)}</div>
+        <div style={{fontSize:11,color:P.textDim}}>{(sl[hover].pct*100).toFixed(1)}%</div>
+      </div>)}
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+      {sl.map((s,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,opacity:hover===null||hover===s.idx?1:0.5,cursor:"pointer",transition:"opacity 0.15s, transform 0.15s",transform:hover===s.idx?"translateX(4px)":"translateX(0)"}} onMouseEnter={()=>setHover(s.idx)} onMouseLeave={()=>setHover(null)}>
+        <div style={{width:10,height:10,borderRadius:2,background:s.c,flexShrink:0,transition:"transform 0.15s",transform:hover===s.idx?"scale(1.3)":"scale(1)"}}/>
+        <span style={{color:P.textDim}}>{s.l}</span>
+        <span style={{fontWeight:600}}>{fmt(s.val)}</span>
+        <span style={{color:P.textMuted}}>({(s.pct*100).toFixed(1)}%)</span>
+      </div>))}
+    </div>
+  </div>);
 }
 
 function Mdl({title,fields,onSave,onCancel,initial,banks,autoFocus}){const P=useT();const S=useS();const[v,setV]=useState(initial||{});const set=(k,val)=>setV(p=>({...p,[k]:val}));const firstRef=useRef(null);

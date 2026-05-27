@@ -759,7 +759,40 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
     </div>):(<div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:14,marginBottom:24}}><SC label="Receitas" value={fmt(rec)} color={P.accent} dim={P.accentGlow}/><SC label="Despesas" value={fmt(desp)} color={P.red} dim={P.redDim}/><SC label="Saldo" value={fmt(sal)} color={sal>=0?P.accent:P.red} dim={sal>=0?P.accentGlow:P.redDim}/><SC label="Gastos Fixos" value={fmt(despFixo)} color={P.blue} dim={P.blueDim}/><SC label="Gastos Eventuais" value={fmt(despVar)} color={P.orange} dim={P.orangeDim}/></div>
     {(rec>0||desp>0)&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:20}}>
-      {(rec>0&&desp>0)&&<div style={{...S.card,padding:24}}><div style={{fontSize:13,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Receita vs Despesa</div><Pie data={pieRecDesp} size={200}/></div>}
+      {(rec>0||desp>0)&&(<div style={{...S.card,padding:20}}>
+        <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:14}}>Receita vs Despesa</div>
+        {(()=>{
+          const pctDesp=rec>0?Math.round((desp/rec)*100):100;const over=pctDesp>100;
+          const arc=Math.min(pctDesp,100)*3.01;
+          return(<div style={{display:"flex",alignItems:"center",gap:20}}>
+            <div style={{position:"relative",width:110,height:110,flexShrink:0}}>
+              <svg width="110" height="110" viewBox="0 0 110 110">
+                <circle cx="55" cy="55" r="44" fill="none" stroke={P.surfaceAlt} strokeWidth="13"/>
+                <circle cx="55" cy="55" r="44" fill="none" stroke={over?P.red:P.accent} strokeWidth="13" strokeDasharray={`${over?132:arc} 999`} strokeLinecap="round" transform="rotate(-90 55 55)"/>
+                {over&&<circle cx="55" cy="55" r="44" fill="none" stroke={P.red} strokeWidth="13" strokeDasharray={`132 999`} opacity="0.3" transform="rotate(-90 55 55)"/>}
+              </svg>
+              <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center"}}>
+                <div style={{fontSize:over?14:20,fontWeight:700,color:over?P.red:P.accent,lineHeight:1}}>{pctDesp}%</div>
+                <div style={{fontSize:7,color:P.textMuted}}>gasto</div>
+              </div>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{marginBottom:8}}>
+                <div style={{fontSize:10,color:P.textMuted}}>Receitas</div>
+                <div style={{fontSize:14,fontWeight:700,color:P.accent}}>{fmt(rec)}</div>
+              </div>
+              <div style={{marginBottom:8}}>
+                <div style={{fontSize:10,color:P.textMuted}}>Despesas</div>
+                <div style={{fontSize:14,fontWeight:700,color:over?P.red:P.text}}>{fmt(desp)}</div>
+              </div>
+              {over?(<div style={{background:P.redDim,border:`1px solid ${P.red}44`,borderRadius:6,padding:"6px 8px"}}>
+                <div style={{fontSize:10,fontWeight:700,color:P.red}}>⚠ Gasto {pctDesp-100}% acima</div>
+                <div style={{fontSize:11,fontWeight:700,color:P.red}}>{fmt(desp-rec)} a mais</div>
+              </div>):(<div><div style={{fontSize:10,color:P.textMuted}}>Saldo</div><div style={{fontSize:14,fontWeight:700,color:P.accent}}>{fmt(rec-desp)}</div></div>)}
+            </div>
+          </div>);
+        })()}
+      </div>)}
       {desp>0&&<div style={{...S.card,padding:24}}><div style={{fontSize:13,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Por Categoria</div><Pie data={pieData}/><div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:14}}>{pieData.map(d=>(<button key={d.label} onClick={()=>setPieFilter(pieFilter===d.label?null:d.label)} style={{display:"flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:6,border:pieFilter===d.label?`2px solid ${d.color}`:`1px solid ${P.border}`,background:pieFilter===d.label?d.color+"18":P.surfaceAlt,cursor:"pointer",fontSize:10,fontWeight:pieFilter===d.label?700:400,color:P.text,fontFamily:"inherit"}}><div style={{width:8,height:8,borderRadius:"50%",background:d.color}}/>{d.label} ({fmt(d.value)})</button>))}</div></div>}
     {pieFilter&&(<div style={{...S.card,marginBottom:0}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:12,fontWeight:700}}>Detalhamento: {pieFilter}</div><button style={{background:"transparent",border:"none",color:P.textMuted,cursor:"pointer",fontSize:12,fontFamily:"inherit"}} onClick={()=>setPieFilter(null)}>✕ Fechar</button></div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr><th style={S.th}>Data</th><th style={S.th}>Descrição</th><th style={S.th}>Valor</th></tr></thead><tbody>{fl.filter(i=>i.tipo!=="Receita"&&(i.categoria||"Outros")===pieFilter).sort((a,b)=>(a.data||"").localeCompare(b.data||"")||(a.descricao||"").localeCompare(b.descricao||"")).map(i=>(<tr key={i.id}><td style={S.td}>{fD(i.data)}</td><td style={S.td}>{i.descricao||"—"}</td><td style={{...S.td,fontWeight:600,color:P.red}}>{fmt(i.valor)}</td></tr>))}</tbody><tfoot><tr><td style={{...S.td,fontWeight:700,borderBottom:"none"}} colSpan={2}>TOTAL</td><td style={{...S.td,fontWeight:700,color:P.red,borderBottom:"none"}}>{fmt(fl.filter(i=>i.tipo!=="Receita"&&(i.categoria||"Outros")===pieFilter).reduce((a,i)=>a+(Number(i.valor)||0),0))}</td></tr></tfoot></table></div></div>)}
       {desp>0&&<div style={{...S.card,padding:24}}><div style={{fontSize:13,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Fixos vs Eventuais</div><Pie data={pieFixVar} size={200}/></div>}
@@ -1631,6 +1664,7 @@ function ProjecoesTab({tG,tRM,retPct,orc,sim,setSim,defSim}){const P=useT();cons
 function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc}){const P=useT();const S=useS();
   const[hovEvo,setHovEvo]=useState(null);
   const[dashMes,setDashMes]=useState(()=>`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`);
+  const[hovCat,setHovCat]=useState(null);
   const dashMesPrev=()=>{const[y,m]=dashMes.split("-").map(Number);const d=new Date(y,m-2,1);setDashMes(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);};
   const dashMesNext=()=>{const[y,m]=dashMes.split("-").map(Number);const d=new Date(y,m,1);setDashMes(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);};
   const tRF=rf.reduce((a,i)=>a+(Number(i.valor)||0),0);const rfE=rf.map(i=>({...i,...calcRF(i)}));const mRF=rfE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
@@ -1719,19 +1753,39 @@ function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc}){const P=useT();const S=useS
         <div style={{...S.card,padding:20,display:"grid",gridTemplateColumns:"1fr auto",gap:20,alignItems:"center"}}>
           <div>
             <div key={dashMes+"catTitle"} className="dash-fade" style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:14}}>Despesas por Categoria — {mL(dashMes)}</div>
-            {catSorted.slice(0,8).map(([cat,val])=>{const pct=recMes>0?Math.min(150,(val/recMes)*100):0;return(<div key={cat} style={{marginBottom:6}}>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:2}}><span style={{fontWeight:600,color:P.text}}>{cat}</span><span style={{color:P.textDim}}>{pct.toFixed(1)}%  {fmt(val)}</span></div>
-              <div style={{height:8,background:P.surfaceAlt,borderRadius:4,overflow:"hidden"}}><div key={dashMes+cat} className="bar-grow" style={{width:`${Math.min(100,pct)}%`,height:"100%",background:pct>100?P.red:P.orange,borderRadius:4}}/></div>
-            </div>);})}
+            {catSorted.slice(0,8).map(([cat,val])=>{
+              const pctOfTotal=desp>0?(val/desp)*100:0;// % do total gasto
+              const pctOfRec=recMes>0?(val/recMes)*100:0;// % da receita (para a barra)
+              const isHov=hovCat===cat;
+              return(<div key={cat} style={{marginBottom:6,cursor:"pointer"}} onMouseEnter={()=>setHovCat(cat)} onMouseLeave={()=>setHovCat(null)}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:2}}>
+                  <span style={{fontWeight:isHov?700:600,color:isHov?P.accent:P.text}}>{cat}</span>
+                  <span style={{color:P.textDim}}>{pctOfTotal.toFixed(1)}% · {fmt(val)}</span>
+                </div>
+                <div style={{height:8,background:P.surfaceAlt,borderRadius:4,overflow:"hidden"}}><div key={dashMes+cat} className="bar-grow" style={{width:`${Math.min(100,pctOfRec)}%`,height:"100%",background:isHov?P.accent:pctOfRec>100?P.red:P.orange,borderRadius:4,transition:"background 0.2s"}}/></div>
+              </div>);
+            })}
           </div>
-          {/* Donut: % of income spent */}
-          <div style={{position:"relative",width:120,height:120}}>
-            <svg width="120" height="120" viewBox="0 0 120 120">
-              <circle cx="60" cy="60" r="48" fill="none" stroke={P.surfaceAlt} strokeWidth="12"/>
-              <circle key={dashMes+"donut"} className="donut-anim" cx="60" cy="60" r="48" fill="none" stroke={cobPct>100?P.red:P.orange} strokeWidth="12" strokeDasharray={`${cobPct*3.01} 999`} strokeLinecap="round" transform="rotate(-90 60 60)"/>
-            </svg>
-            <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center"}}><div style={{fontSize:28,fontWeight:700,color:cobPct>100?P.red:P.text}}>{cobPct}%</div></div>
-          </div>
+          {/* Donut: interactive — shows hovCat % or total cobPct */}
+          {(()=>{
+            const hovVal=hovCat?catSorted.find(([c])=>c===hovCat)?.[1]||0:0;
+            const hovPct=recMes>0?(hovVal/recMes)*100:0;
+            const hovPctTotal=desp>0?(hovVal/desp)*100:0;
+            const showHov=hovCat&&hovVal>0;
+            const displayPct=showHov?Math.min(200,hovPct):cobPct;
+            const arc=Math.min(displayPct,100)*3.01;
+            const color=showHov?P.accent:cobPct>100?P.red:P.orange;
+            return(<div style={{position:"relative",width:130,height:130}} onMouseLeave={()=>setHovCat(null)}>
+              <svg width="130" height="130" viewBox="0 0 120 120">
+                <circle cx="60" cy="60" r="48" fill="none" stroke={P.surfaceAlt} strokeWidth="14"/>
+                {showHov&&<circle cx="60" cy="60" r="48" fill="none" stroke={P.border} strokeWidth="14" strokeDasharray={`${cobPct*3.01} 999`} strokeLinecap="round" transform="rotate(-90 60 60)" opacity="0.5"/>}
+                <circle key={dashMes+(hovCat||"donut")} className="donut-anim" cx="60" cy="60" r="48" fill="none" stroke={color} strokeWidth="14" strokeDasharray={`${arc} 999`} strokeLinecap="round" transform="rotate(-90 60 60)"/>
+              </svg>
+              <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center",lineHeight:1.2}}>
+                {showHov?(<><div style={{fontSize:14,fontWeight:700,color:P.accent}}>{hovPctTotal.toFixed(1)}%</div><div style={{fontSize:8,color:P.textMuted}}>do total</div><div style={{fontSize:9,fontWeight:600,color:P.textDim}}>{fmt(hovVal)}</div></>):(<><div style={{fontSize:26,fontWeight:700,color:cobPct>100?P.red:P.text}}>{cobPct}%</div><div style={{fontSize:8,color:P.textMuted}}>da receita</div></>)}
+              </div>
+            </div>);
+          })()}
         </div>
       </div>
     </div>

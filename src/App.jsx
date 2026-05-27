@@ -1770,7 +1770,7 @@ function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc}){const P=useT();const S=useS
           {(()=>{
             const hovVal=hovCat?catSorted.find(([c])=>c===hovCat)?.[1]||0:0;
             const hovPct=recMes>0?(hovVal/recMes)*100:0;
-            const hovPctTotal=desp>0?(hovVal/desp)*100:0;
+            const hovPctTotal=despMes>0?(hovVal/despMes)*100:0;
             const showHov=hovCat&&hovVal>0;
             const displayPct=showHov?Math.min(200,hovPct):cobPct;
             const arc=Math.min(displayPct,100)*3.01;

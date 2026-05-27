@@ -1754,7 +1754,7 @@ function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc}){const P=useT();const S=useS
           <div>
             <div key={dashMes+"catTitle"} className="dash-fade" style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:14}}>Despesas por Categoria — {mL(dashMes)}</div>
             {catSorted.slice(0,8).map(([cat,val])=>{
-              const pctOfTotal=desp>0?(val/desp)*100:0;// % do total gasto
+              const pctOfTotal=despMes>0?(val/despMes)*100:0;// % do total gasto
               const pctOfRec=recMes>0?(val/recMes)*100:0;// % da receita (para a barra)
               const isHov=hovCat===cat;
               return(<div key={cat} style={{marginBottom:6,cursor:"pointer"}} onMouseEnter={()=>setHovCat(cat)} onMouseLeave={()=>setHovCat(null)}>

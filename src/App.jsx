@@ -998,6 +998,82 @@ function CryptoPanel(){const P=useT();const S=useS();
 }
 
 /* 3. BENCHMARK COMPARISON (used in Dashboard) */
+function LiquidezPanel({rf,inco,P,S}){
+  const[dataAlvo,setDataAlvo]=useState(()=>{const d=new Date();d.setMonth(d.getMonth()+12);return d.toISOString().slice(0,10);});
+  const hoje=new Date();hoje.setHours(0,0,0,0);
+  const alvo=new Date(dataAlvo+"T00:00:00");
+  const diasAte=Math.max(0,Math.floor((alvo-hoje)/864e5));
+  // RF vencendo até a data alvo
+  const rfLiq=rf.filter(i=>i.dataVencimento&&new Date(i.dataVencimento+"T00:00:00")<=alvo);
+  const rfJaVenc=rf.filter(i=>i.dataVencimento&&new Date(i.dataVencimento+"T00:00:00")<hoje);
+  const rfNoAlvo=rf.filter(i=>i.dataVencimento&&new Date(i.dataVencimento+"T00:00:00")>=hoje&&new Date(i.dataVencimento+"T00:00:00")<=alvo);
+  // INCO vencendo até a data alvo
+  const incoLiq=inco.filter(i=>i.dataVencimento&&new Date(i.dataVencimento+"T00:00:00")<=alvo);
+  const incoJaVenc=inco.filter(i=>i.dataVencimento&&new Date(i.dataVencimento+"T00:00:00")<hoje);
+  const incoNoAlvo=inco.filter(i=>i.dataVencimento&&new Date(i.dataVencimento+"T00:00:00")>=hoje&&new Date(i.dataVencimento+"T00:00:00")<=alvo);
+  const totalRF=rfNoAlvo.reduce((a,i)=>a+(Number(i.valor)||0),0);
+  const totalRFVenc=rfJaVenc.reduce((a,i)=>a+(Number(i.valor)||0),0);
+  const totalInco=incoNoAlvo.reduce((a,i)=>a+(Number(i.valor)||0),0);
+  const totalIncoVenc=incoJaVenc.reduce((a,i)=>a+(Number(i.valor)||0),0);
+  const totalLiquidez=totalRFVenc+totalRF+totalIncoVenc+totalInco;
+  const totalLiquidezFutura=totalRF+totalInco;
+  const[showDetail,setShowDetail]=useState(false);
+  const allVenc=[...rfNoAlvo.map(i=>({...i,tipo:"RF"})),...incoNoAlvo.map(i=>({...i,tipo:"INCO"}))].sort((a,b)=>(a.dataVencimento||"").localeCompare(b.dataVencimento||""));
+  return(<div style={S.card}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+      <div><div style={{fontSize:13,fontWeight:700,textTransform:"uppercase",color:P.textDim}}>💧 Liquidez até</div></div>
+      <input style={{...S.i,width:"auto",minWidth:160}} type="date" value={dataAlvo} min={hoje.toISOString().slice(0,10)} onChange={e=>setDataAlvo(e.target.value)}/>
+    </div>
+    <div style={{fontSize:11,color:P.textMuted,marginBottom:16}}>{diasAte} dias · {alvo.toLocaleDateString("pt-BR",{day:"2-digit",month:"long",year:"numeric"})}</div>
+    {/* Total cards */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+      <div style={{background:P.surfaceAlt,borderRadius:10,padding:"14px 16px",border:`1px solid ${P.border}`}}>
+        <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Vence no período</div>
+        <div style={{fontSize:22,fontWeight:700,color:P.accent}}>{fmt(totalLiquidezFutura)}</div>
+        <div style={{fontSize:11,color:P.textDim,marginTop:2}}>{rfNoAlvo.length+incoNoAlvo.length} título{rfNoAlvo.length+incoNoAlvo.length!==1?"s":""}</div>
+      </div>
+      <div style={{background:P.surfaceAlt,borderRadius:10,padding:"14px 16px",border:`1px solid ${P.border}`}}>
+        <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Liquidez total disponível</div>
+        <div style={{fontSize:22,fontWeight:700,color:P.cyan}}>{fmt(totalLiquidez)}</div>
+        <div style={{fontSize:11,color:P.textDim,marginTop:2}}>incluindo já vencidos</div>
+      </div>
+    </div>
+    {/* Breakdown */}
+    {(totalRF>0||totalInco>0)&&(<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+      {totalRF>0&&<div style={{flex:1,minWidth:100,background:P.blueDim,border:`1px solid ${P.blue}44`,borderRadius:8,padding:"10px 14px"}}>
+        <div style={{fontSize:10,color:P.textMuted}}>Renda Fixa</div>
+        <div style={{fontSize:16,fontWeight:700,color:P.blue}}>{fmt(totalRF)}</div>
+        <div style={{fontSize:10,color:P.textDim}}>{rfNoAlvo.length} título{rfNoAlvo.length!==1?"s":""}</div>
+      </div>}
+      {totalInco>0&&<div style={{flex:1,minWidth:100,background:P.cyanDim,border:`1px solid ${P.cyan}44`,borderRadius:8,padding:"10px 14px"}}>
+        <div style={{fontSize:10,color:P.textMuted}}>INCO</div>
+        <div style={{fontSize:16,fontWeight:700,color:P.cyan}}>{fmt(totalInco)}</div>
+        <div style={{fontSize:10,color:P.textDim}}>{incoNoAlvo.length} título{incoNoAlvo.length!==1?"s":""}</div>
+      </div>}
+    </div>)}
+    {/* Detail toggle */}
+    {allVenc.length>0&&(<>
+      <button style={{...S.btnO,width:"100%",marginBottom:showDetail?12:0}} onClick={()=>setShowDetail(p=>!p)}>
+        {showDetail?"▲ Ocultar títulos":"▼ Ver "+allVenc.length+" título"+(allVenc.length!==1?"s":"")+" em detalhe"}
+      </button>
+      {showDetail&&(<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+        <thead><tr><th style={S.th}>Tipo</th><th style={S.th}>Título</th><th style={S.th}>Vencimento</th><th style={S.th}>Dias</th><th style={S.th}>Valor</th></tr></thead>
+        <tbody>{allVenc.map((i,idx)=>{
+          const dv=new Date(i.dataVencimento+"T00:00:00");const dias=Math.floor((dv-hoje)/864e5);
+          return(<tr key={idx}><td style={S.td}><span style={S.tag(i.tipo==="RF"?P.blue:P.cyan,i.tipo==="RF"?P.blueDim:P.cyanDim)}>{i.tipo}</span></td>
+            <td style={S.td}>{i.tipo==="RF"?(i.tipo_original||i.tipo):(i.empreendimento||"INCO")}</td>
+            <td style={S.td}>{fD(i.dataVencimento)}</td>
+            <td style={{...S.td,color:dias<=30?P.orange:P.textDim}}>{dias}d</td>
+            <td style={{...S.td,fontWeight:600,color:P.accent}}>{fmt(i.valor)}</td>
+          </tr>);
+        })}</tbody>
+        <tfoot><tr><td colSpan={4} style={{...S.td,fontWeight:700,borderBottom:"none"}}>TOTAL</td><td style={{...S.td,fontWeight:700,color:P.accent,borderBottom:"none"}}>{fmt(totalLiquidezFutura)}</td></tr></tfoot>
+      </table></div>)}
+    </>)}
+    {totalLiquidezFutura===0&&<div style={{textAlign:"center",padding:16,color:P.textMuted,fontSize:12}}>Nenhum título vence até {alvo.toLocaleDateString("pt-BR")}.</div>}
+  </div>);
+}
+
 function BenchmarkPanel({tG,retPctAnual,P,S}){
   const cdi=RATES.cdi12m,ipca=RATES.ipca12m,ipca6=((1+ipca/100)*(1+6/100)-1)*100,dolar=5.0;
   const benchmarks=[
@@ -1838,6 +1914,7 @@ function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc}){const P=useT();const S=useS
     {/* Pie charts + Benchmark */}
     {tG>0&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}><div style={{...S.card,padding:24}}><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Valor Investido</div><Pie data={patD} size={220}/></div>{tRM>0&&<div style={{...S.card,padding:24}}><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Renda Mensal</div><Pie data={renD} size={220}/></div>}</div>)}
     {tG>0&&<BenchmarkPanel tG={tG} retPctAnual={retPct*12} P={P} S={S}/>}
+    {tG>0&&<LiquidezPanel rf={rf} inco={inco} P={P} S={S}/>}
     {indices.some(i=>i.valor)&&(<div style={S.card}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",color:P.textDim,marginBottom:14}}>Índices</div><div style={{display:"flex",flexWrap:"wrap",gap:14}}>{indices.filter(i=>i.valor).map(i=>(<div key={i.nome} style={{minWidth:100}}><div style={{fontSize:10,color:P.textMuted}}>{i.nome}</div><div style={{fontSize:14,fontWeight:700}}>{i.unidade==="R$"?fmt(i.valor):fP(i.valor)}</div></div>))}</div></div>)}
   </div>);
 }
@@ -1845,7 +1922,9 @@ function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc}){const P=useT();const S=useS
 const DEF_IND=[{nome:"Sal.Mínimo",valor:"",unidade:"R$"},{nome:"SELIC (meta)",valor:"",unidade:"%"},{nome:"SELIC (mês)",valor:"",unidade:"%"},{nome:"SELIC (acum.jan)",valor:"",unidade:"%"},{nome:"IPCA (mês)",valor:"",unidade:"%"},{nome:"IPCA (acum.12m)",valor:"",unidade:"%"},{nome:"CDI (mês)",valor:"",unidade:"%"},{nome:"CDI (acum.12m)",valor:"",unidade:"%"},{nome:"Poupança",valor:"",unidade:"%"},{nome:"INCC",valor:"",unidade:"%"},{nome:"IGPM",valor:"",unidade:"%"},{nome:"Dólar",valor:"",unidade:"R$"}];
 
 export default function App(){
-  const[userId,setUserId]=useState(()=>localStorage.getItem("ip8-userId")||"");const[loggedIn,setLoggedIn]=useState(()=>!!localStorage.getItem("ip8-userId"));const[syncStatus,setSyncStatus]=useState("");const[loginCode,setLoginCode]=useState("");
+  const FIXED_USER="ivan-nod";
+  const[userId]=useState(FIXED_USER);const[loggedIn]=useState(true);const[syncStatus,setSyncStatus]=useState("");
+  const doLogout=()=>{};
   const[isDark,setIsDark]=useState(()=>ld(SK.theme,"industrial"));const[tab,setTab]=useState("dashboard");
   const[font,setFont]=useState(()=>ld("ip8-font","montserrat"));
   const[rf,setRf]=useState(()=>ld(SK.rf,[]));const[inco,setInco]=useState(()=>ld(SK.inco,[]));
@@ -1864,9 +1943,9 @@ export default function App(){
   const[simImo,setSimImo]=useState(()=>ld(SK.simImo,DEF_SIM_IMO));
   const[simPrf,setSimPrf]=useState(()=>ld(SK.simPrf,DEF_SIM_PRF));
   const[simProj,setSimProj]=useState(()=>ld(SK.simProj,DEF_SIM_PROJ));
-  useEffect(()=>{if(userId)loadFromFirestore(userId);},[]);
+  useEffect(()=>{loadFromFirestore(FIXED_USER);},[]);
   const loadFromFirestore=async(uid)=>{try{setSyncStatus("Sincronizando...");const snap=await getDoc(doc(db,"investpro",uid));if(snap.exists()){const d=snap.data();if(d.rf)setRf(d.rf);if(d.inco)setInco(d.inco);if(d.ac)setAc(d.ac);if(d.etfs)setEtfs(d.etfs);if(d.fiis)setFiis(d.fiis);if(d.cr)setCr(d.cr);if(d.indices)setIndices(d.indices);if(d.aportes)setAportes(d.aportes);if(d.orc)setOrc(d.orc);if(d.banks)setBanks(d.banks);if(d.apMeta!=null)setApMeta(d.apMeta);if(d.fiiMkt)setFiiMkt(d.fiiMkt);if(d.evo)setEvo(d.evo);if(d.tdApos)setTdApos(d.tdApos);if(d.tdLiza)setTdLiza(d.tdLiza);if(d.simImo)setSimImo(d.simImo);if(d.simPrf)setSimPrf(d.simPrf);if(d.simProj)setSimProj(d.simProj);if(d.theme!=null)setIsDark(d.theme);if(d.font)setFont(d.font);if(d.prfRef)setPrfRef(d.prfRef);}setSyncStatus("\u2713 Sincronizado");setTimeout(()=>setSyncStatus(""),3000);}catch(e){console.error(e);setSyncStatus("Erro sync");}};
-  const saveTimer=useRef(null);const saveToFirestore=useCallback(()=>{if(!userId)return;if(saveTimer.current)clearTimeout(saveTimer.current);saveTimer.current=setTimeout(async()=>{try{await setDoc(doc(db,"investpro",userId),{rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,simImo,simPrf,simProj,theme:isDark,font,prfRef,updatedAt:new Date().toISOString()},{merge:true});}catch(e){console.error(e);}},2000);},[userId,rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,simImo,simPrf,simProj,isDark,font,prfRef]);
+  const saveTimer=useRef(null);const saveToFirestore=useCallback(()=>{if(saveTimer.current)clearTimeout(saveTimer.current);saveTimer.current=setTimeout(async()=>{try{await setDoc(doc(db,"investpro",FIXED_USER),{rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,simImo,simPrf,simProj,theme:isDark,font,prfRef,updatedAt:new Date().toISOString()},{merge:true});}catch(e){console.error(e);}},2000);},[rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,simImo,simPrf,simProj,isDark,font,prfRef]);
   useEffect(()=>{sv(SK.theme,isDark);},[isDark]);useEffect(()=>{sv("ip8-font",font);},[font]);useEffect(()=>{sv(SK.rf,rf);},[rf]);useEffect(()=>{sv(SK.inco,inco);},[inco]);useEffect(()=>{sv(SK.ac,ac);},[ac]);useEffect(()=>{sv(SK.etf,etfs);},[etfs]);useEffect(()=>{sv(SK.fii,fiis);},[fiis]);useEffect(()=>{sv(SK.cr,cr);},[cr]);useEffect(()=>{sv(SK.ind,indices);},[indices]);useEffect(()=>{sv(SK.ap,aportes);},[aportes]);useEffect(()=>{sv(SK.orc,orc);},[orc]);useEffect(()=>{sv(SK.banks,banks);},[banks]);useEffect(()=>{sv(SK.apMeta,apMeta);},[apMeta]);useEffect(()=>{sv(SK.fiiMkt,fiiMkt);},[fiiMkt]);useEffect(()=>{sv(SK.evo,evo);},[evo]);useEffect(()=>{sv(SK.prfRef,prfRef);},[prfRef]);useEffect(()=>{sv(SK.tdApos,tdApos);},[tdApos]);useEffect(()=>{sv(SK.tdLiza,tdLiza);},[tdLiza]);useEffect(()=>{sv(SK.simImo,simImo);},[simImo]);useEffect(()=>{sv(SK.simPrf,simPrf);},[simPrf]);useEffect(()=>{sv(SK.simProj,simProj);},[simProj]);
   useEffect(()=>{if(userId)saveToFirestore();},[rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,simImo,simPrf,simProj,isDark,font,prfRef,saveToFirestore]);
   useEffect(()=>{const c=ld(SK.rates,null);if(c)RATES=c;},[]);
@@ -1876,9 +1955,6 @@ export default function App(){
   const[clock,setClock]=useState("");const[todayStr,setTodayStr]=useState("");const[weekDay,setWeekDay]=useState("");
   useEffect(()=>{const t=setInterval(()=>{const n=new Date();setClock(n.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}));setTodayStr(n.toLocaleDateString("pt-BR"));setWeekDay(n.toLocaleDateString("pt-BR",{weekday:"long"}));},1000);return()=>clearInterval(t);},[]);
   // Login/logout functions
-  const doLogin=()=>{if(!loginCode.trim())return;const code=loginCode.trim().toLowerCase().replace(/\s+/g,"-");localStorage.setItem("ip8-userId",code);setUserId(code);setLoggedIn(true);loadFromFirestore(code);};
-  const doLogout=()=>{localStorage.removeItem("ip8-userId");setUserId("");setLoggedIn(false);};
-  if(!loggedIn)return(<div style={{display:"flex",justifyContent:"center",alignItems:"center",minHeight:"100vh",background:INDUSTRIAL.bg,fontFamily:"'Montserrat',sans-serif"}}><div style={{textAlign:"center",background:INDUSTRIAL.surface,border:"1px solid "+INDUSTRIAL.border,borderRadius:16,padding:"48px 40px",minWidth:360}}><div style={{fontSize:32,fontWeight:700,color:INDUSTRIAL.accent,marginBottom:8}}>◉ NOD-INVEST</div><div style={{fontSize:13,color:INDUSTRIAL.textDim,marginBottom:32}}>Gestão de Investimentos</div><div style={{fontSize:12,color:INDUSTRIAL.textDim,marginBottom:10,textAlign:"left"}}>Código de acesso:</div><input value={loginCode} onChange={e=>setLoginCode(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")doLogin();}} placeholder="Ex: ivan-2026" style={{width:"100%",padding:"14px 16px",fontSize:16,fontWeight:600,border:"1px solid "+INDUSTRIAL.border,borderRadius:10,background:INDUSTRIAL.surfaceAlt,color:INDUSTRIAL.text,fontFamily:"inherit",marginBottom:16,boxSizing:"border-box",textAlign:"center",letterSpacing:"1px"}}/><button onClick={doLogin} style={{width:"100%",padding:"14px 24px",fontSize:14,fontWeight:600,color:"#fff",background:INDUSTRIAL.accent,border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit"}}>Entrar</button><div style={{fontSize:10,color:INDUSTRIAL.textMuted,marginTop:16}}>Use o mesmo código em qualquer dispositivo para sincronizar seus dados.</div></div></div>);
 
   // Calculate monthly return % for SimTab
   const _rfE=rf.map(i=>({...i,...calcRF(i)})),_mRF=_rfE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);

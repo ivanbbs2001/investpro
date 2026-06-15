@@ -616,7 +616,7 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
     const dup=data.some(d=>d.data===item.data&&Math.abs((Number(d.valor)||0)-(Number(item.valor)||0))<0.01&&(d.descricao||"").toUpperCase()===(item.descricao||"").toUpperCase());
     return{...item,isDup:dup};
   });
-  const IGNORE_EXTRATO=["PAGAMENTO RECEBIDO","PAGAMENTO DE FATURA","PAG FATURA","APLICACAO","RESGATE","TRANSFERENCIA ENTRE","TED ENTRE","RENDIMENTO","IOF","TARIFA","JUROS","SALDO"];
+  const IGNORE_EXTRATO=["PAGAMENTO RECEBIDO","PAGAMENTO DE FATURA","PAG FATURA","APLICACAO","RESGATE","TRANSFERENCIA ENTRE","TED ENTRE","RENDIMENTO","IOF","TARIFA","JUROS","SALDO","IVAN BIALECKI"];
   const parseTextToItems=(text,fileName,isExtrato)=>{
     const lines=text.split("\n").map(l=>l.trim()).filter(l=>l);const items=[];
     // Detect separator from first data line
@@ -634,17 +634,26 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
       });
     } else {
       lines.forEach((line,idx)=>{if(idx===0&&(line.toLowerCase().includes("data")||line.toLowerCase().includes("date")||line.toLowerCase().includes("lançamento")||line.toLowerCase().includes("title")||line.toLowerCase().includes("amount")))return;
-        const splitLine=(l)=>{if(l.includes(";"))return l.split(";");if(l.includes("\t"))return l.split("\t");// comma: use if line has date-like start (YYYY-MM-DD or DD/MM/YYYY) followed by comma
+        // --- SISPRIME / bank PDF format ---
+        // Line like: "18/05/2026 38372267 Pagamento Pix SHPP BRASIL INSTITUI R$ 45,78 R$ 5.285,71"
+        const sisprime=line.match(/^(\d{2}\/\d{2}\/\d{4})\s+\S+\s+(?:Pagamento Pix|Débito Pix|Pix|Ted|Liq\. Eletrônica IB)\s+(.+?)\s+R\$\s*([\d.,]+)\s+R\$\s*[\d.,]+\s*$/i);
+        if(sisprime){
+          const[,rawDt,desc,rawVal]=sisprime;const dm=rawDt.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+          const dt=dm?`${dm[3]}-${dm[2]}-${dm[1]}`:rawDt;const val=Math.abs(Number(rawVal.replace(/\./g,"").replace(",","."))||0);
+          if(val>0&&desc.trim()){
+            const dUp=desc.trim().toUpperCase();if(IGNORE_EXTRATO.some(ig=>dUp.includes(ig)))return;
+            const d2=desc.trim();const mapped=catMap[dUp]||guessCategory(d2);
+            items.push({id:uid(),data:dt,tipo:"Despesa",categoria:mapped,descricao:"PIX: "+d2,valor:val.toFixed(2),fixo:AUTO_FIXO.includes(mapped),original:d2});
+          }return;
+        }
+        const splitLine=(l)=>{if(l.includes(";"))return l.split(";");if(l.includes("\t"))return l.split("\t");
           if(l.includes(",")&&(l.match(/^\d{4}-\d{2}-\d{2},/)||l.match(/^\d{2}[\/\-]\d{2}[\/\-]\d{4},/)))return l.split(",");return null;};
         const parts=splitLine(line)||[];let parsed=null;
         if(parts.length>=3){
           let dt=parts[0].trim(),desc=parts[1].trim(),val=0;
-          // Handle both "date;title;amount" and "date;desc;debit;credit"
           if(isExtrato&&parts.length>=4){const debit=parts[2].trim().replace(/[^\d.,-]/g,"").replace(",",".");val=Math.abs(Number(debit)||0);if(val===0)return;}
           else{val=Math.abs(Number(parts[parts.length-1].trim().replace(/[^\d.,]/g,"").replace(",","."))||0);}
-          // Handle yyyy-mm-dd format (date column from image)
-          const dm1=dt.match(/(\d{4})-(\d{2})-(\d{2})/);if(dm1)dt=dt;// already YYYY-MM-DD, keep it
-          else{const dm2=dt.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);if(dm2)dt=`${dm2[3]}-${dm2[2]}-${dm2[1]}`;}
+          const dm1=dt.match(/(\d{4})-(\d{2})-(\d{2})/);if(!dm1){const dm2=dt.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);if(dm2)dt=`${dm2[3]}-${dm2[2]}-${dm2[1]}`;}
           if(val>0&&desc)parsed={dt,desc,val};
         }
         if(!parsed)parsed=parseFaturaLine(line);
@@ -755,6 +764,12 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
       <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:16}}><button style={S.btnO} onClick={()=>{setShowImport(false);setImportItems([]);}}>Cancelar</button><button style={S.btn()} onClick={confirmImport}>Importar {importItems.filter(i=>!i.isDup).length} itens</button></div>
     </div></div>)}
 
+    {(()=>{
+      const quinze=new Date();quinze.setDate(quinze.getDate()-15);const q15=quinze.toISOString().slice(0,10);
+      const recent=data.filter(i=>i.data>=q15&&i.tipo!=="Receita");
+      if(recent.length===0&&data.length>0){return(<div style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.4)",borderRadius:8,padding:"10px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:18}}>⚠️</span><div><div style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>Gastos desatualizados</div><div style={{fontSize:11,color:"#dc2626",opacity:0.8}}>Nenhum gasto nos últimos 15 dias. Atualize via <b>📎 Fatura Cartão</b> ou <b>🏦 Extrato Banco</b>.</div></div></div>);}
+      return null;
+    })()}
     {sub==="relatorio"?(<div>
       <div style={S.card}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><div style={{fontSize:14,fontWeight:700}}>Relatório Comparativo</div><div style={{display:"flex",gap:8}}><button style={S.btnO} onClick={()=>{setRepCats([]);setRepMonths([]);}}>Limpar Tudo</button><button style={S.btnO} onClick={()=>setRepMonths([...allMonths])}>Selecionar Todo Período</button></div></div>

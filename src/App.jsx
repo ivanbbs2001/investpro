@@ -767,8 +767,10 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
     {(()=>{
       const quinze=new Date();quinze.setDate(quinze.getDate()-15);const q15=quinze.toISOString().slice(0,10);
       const recent=data.filter(i=>i.data>=q15&&i.tipo!=="Receita");
-      if(recent.length===0&&data.length>0){return(<div style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.4)",borderRadius:8,padding:"10px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:18}}>⚠️</span><div><div style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>Gastos desatualizados</div><div style={{fontSize:11,color:"#dc2626",opacity:0.8}}>Nenhum gasto nos últimos 15 dias. Atualize via <b>📎 Fatura Cartão</b> ou <b>🏦 Extrato Banco</b>.</div></div></div>);}
-      return null;
+      if(data.length===0)return null;
+      if(recent.length===0){return(<div style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.4)",borderRadius:8,padding:"10px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:18}}>⚠️</span><div><div style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>Gastos desatualizados</div><div style={{fontSize:11,color:"#dc2626",opacity:0.8}}>Nenhum gasto nos últimos 15 dias. Atualize via <b>📎 Fatura Cartão</b> ou <b>🏦 Extrato Banco</b>.</div></div></div>);}
+      const last=recent.sort((a,b)=>b.data.localeCompare(a.data))[0];const diasAtras=Math.floor((new Date()-new Date(last.data+"T00:00:00"))/864e5);
+      return(<div style={{background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.35)",borderRadius:8,padding:"10px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:18}}>✅</span><div><div style={{fontSize:12,fontWeight:700,color:"#16a34a"}}>Gastos atualizados</div><div style={{fontSize:11,color:"#16a34a",opacity:0.8}}>Último lançamento há {diasAtras===0?"hoje":diasAtras===1?"1 dia":`${diasAtras} dias`} ({fD(last.data)}).</div></div></div>);
     })()}
     {sub==="relatorio"?(<div>
       <div style={S.card}>

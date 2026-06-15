@@ -600,10 +600,56 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
     const pdfjsLib=window.pdfjsLib;
     pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
     const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;
-    let text="";for(let i=1;i<=pdf.numPages;i++){const page=await pdf.getPage(i);const content=await page.getTextContent();
-      const lns=[];let lastY=null;content.items.forEach(item=>{if(lastY!==null&&Math.abs(item.transform[5]-lastY)>3){lns.push("\n");}lns.push(item.str);lastY=item.transform[5];});
-      text+=lns.join(" ")+"\n";
-    }return text;
+    // Extract with position info to reconstruct table rows
+    const rows=[];
+    for(let i=1;i<=pdf.numPages;i++){const page=await pdf.getPage(i);const content=await page.getTextContent();
+      // Group items by Y position (same row = same Y ±4px)
+      const byY={};content.items.forEach(item=>{const y=Math.round(item.transform[5]/4)*4;if(!byY[y])byY[y]=[];byY[y].push({x:item.transform[4],str:item.str});});
+      Object.keys(byY).sort((a,b)=>Number(b)-Number(a)).forEach(y=>{
+        const rowItems=byY[y].sort((a,b)=>a.x-b.x);rows.push(rowItems.map(i=>i.str).join("\t"));
+      });
+    }
+    return rows.join("\n");
+  };
+  // PDF to CSV converter
+  const[showPdfCsv,setShowPdfCsv]=useState(false);const[pdfCsvRows,setPdfCsvRows]=useState([]);const[pdfCsvLoading,setPdfCsvLoading]=useState(false);
+  const handlePdfToCsv=async(e)=>{const file=e.target.files[0];if(!file)return;setPdfCsvLoading(true);
+    try{
+      const text=await extractPdfText(file);const lines=text.split("\n").filter(l=>l.trim());const rows=[];
+      lines.forEach(line=>{
+        // Sisprime format: date\tdoc\thistorico\tdescricao\tdebito\tcredito\tsaldo
+        const parts=line.split("\t");
+        // Check if first column is a date
+        const dateMatch=parts[0]?.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if(dateMatch&&parts.length>=3){
+          const dt=`${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+          // Find description and debit value
+          // Skip doc number (numeric only)
+          const textParts=parts.slice(1).filter(p=>p.trim()&&!p.trim().match(/^\d{5,}$/));
+          // Find money values (R$ X.XXX,XX pattern)
+          const moneyParts=textParts.filter(p=>p.trim().match(/^\d[\d.,]*$/));
+          const textDesc=textParts.filter(p=>!p.trim().match(/^\d[\d.,]*$/)&&!p.toLowerCase().includes("pagamento pix")&&!p.toLowerCase().includes("débito pix")&&!p.toLowerCase().includes("liq. eletrônica")&&!p.toLowerCase().includes("ted"));
+          const historico=textParts.filter(p=>p.toLowerCase().includes("pix")||p.toLowerCase().includes("ted")||p.toLowerCase().includes("liq."))[0]||"";
+          const desc=(textDesc.join(" ")||parts.slice(3,5).join(" ")).trim();
+          // First money value is debit, last is saldo
+          if(moneyParts.length>=1&&desc){
+            const val=moneyParts[0].replace(/\./g,"").replace(",",".");
+            if(Number(val)>0)rows.push({dt,historico:historico.trim(),desc:desc.trim(),val,include:true,categoria:catMap[desc.trim().toUpperCase()]||guessCategory(desc.trim())});
+          }
+        }
+      });
+      // Remove duplicates and entries to self
+      const filtered=rows.filter(r=>!r.desc.toUpperCase().includes("IVAN BIALECKI")&&!IGNORE_EXTRATO.some(ig=>r.desc.toUpperCase().includes(ig)));
+      setPdfCsvRows(filtered);setShowPdfCsv(true);
+    }catch(err){alert("Erro ao ler PDF: "+err.message);}
+    setPdfCsvLoading(false);e.target.value="";
+  };
+  const confirmPdfCsv=()=>{
+    const toImport=pdfCsvRows.filter(r=>r.include).map(r=>{
+      const isPix=r.historico.toUpperCase().includes("PIX");const mapped=catMap[r.desc.toUpperCase()]||r.categoria;
+      return{id:uid(),data:r.dt,tipo:"Despesa",categoria:mapped,descricao:(isPix?"PIX: ":"")+r.desc,valor:Number(r.val).toFixed(2),fixo:AUTO_FIXO.includes(mapped),original:r.desc};
+    });
+    const withDup=processImportItems(toImport);setImportItems(withDup);setShowPdfCsv(false);if(withDup.length>0)setShowImport(true);
   };
   const parseFaturaLine=(line)=>{
     const m=line.match(/(\d{2}[\/\-]\d{2}[\/\-]\d{4})\s+(.+?)\s+([\d.,]+)\s*$/);
@@ -743,10 +789,31 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
         <button style={S.btn()} onClick={()=>setModal("new")}>+ Novo</button>
         <label style={{...S.btnO,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><input type="file" accept=".csv,.txt,.ofx,.pdf" style={{display:"none"}} onChange={handleImport}/>📎 Fatura Cartão</label>
         <label style={{...S.btnO,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><input type="file" accept=".csv,.txt,.ofx,.pdf" style={{display:"none"}} onChange={handleExtrato}/>🏦 Extrato Banco</label>
+        <label style={{...S.btn(P.purple),cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><input type="file" accept=".pdf" style={{display:"none"}} onChange={handlePdfToCsv}/>{pdfCsvLoading?"⏳ Lendo...":"📄 PDF→Extrato"}</label>
       </div>
     </div>
 
-    {/* Import review modal */}
+    {/* PDF→CSV preview modal */}
+    {showPdfCsv&&(<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:100,display:"flex",justifyContent:"center",alignItems:"center"}}><div style={{background:P.surface,borderRadius:14,padding:24,maxWidth:820,width:"92%",maxHeight:"85vh",overflow:"auto",border:`1px solid ${P.border}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={{fontSize:16,fontWeight:700}}>📄 Extrato PDF — {pdfCsvRows.length} transações encontradas</div><button style={S.btnO} onClick={()=>setShowPdfCsv(false)}>✕</button></div>
+      <div style={{fontSize:11,color:P.textDim,marginBottom:14}}>Revise os lançamentos. Desmarque os que não deseja importar. Edite a categoria se necessário.</div>
+      {pdfCsvRows.length===0?(<div style={{textAlign:"center",padding:40,color:P.textMuted}}>Nenhuma transação identificada neste PDF. Tente o botão 🏦 Extrato Banco com arquivo CSV.</div>):(
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+          <thead><tr><th style={S.th}><input type="checkbox" checked={pdfCsvRows.every(r=>r.include)} onChange={e=>{const v=e.target.checked;setPdfCsvRows(p=>p.map(r=>({...r,include:v})));}} title="Marcar todos"/></th><th style={S.th}>Data</th><th style={S.th}>Descrição</th><th style={S.th}>Categoria</th><th style={S.th}>Valor</th></tr></thead>
+          <tbody>{pdfCsvRows.map((row,idx)=>(<tr key={idx} style={{opacity:row.include?1:0.4}}>
+            <td style={S.td}><input type="checkbox" checked={row.include} onChange={e=>{const n=[...pdfCsvRows];n[idx]={...n[idx],include:e.target.checked};setPdfCsvRows(n);}}/></td>
+            <td style={S.td}>{fD(row.dt)}</td>
+            <td style={{...S.td,maxWidth:220}}><input style={{...S.i,fontSize:10,padding:"3px 6px"}} value={row.desc} onChange={e=>{const n=[...pdfCsvRows];n[idx]={...n[idx],desc:e.target.value};setPdfCsvRows(n);}}/></td>
+            <td style={S.td}><select style={{...S.sel,fontSize:10,padding:"3px 6px"}} value={row.categoria} onChange={e=>{const n=[...pdfCsvRows];n[idx]={...n[idx],categoria:e.target.value};setPdfCsvRows(n);}}>{ORC_C.map(c=><option key={c} value={c}>{catEmoji(c)} {c}</option>)}</select></td>
+            <td style={{...S.td,fontWeight:600,color:P.red}}>{fmt(row.val)}</td>
+          </tr>))}</tbody>
+          <tfoot><tr><td colSpan={4} style={{...S.td,fontWeight:700,borderBottom:"none"}}>TOTAL selecionado</td><td style={{...S.td,fontWeight:700,color:P.red,borderBottom:"none"}}>{fmt(pdfCsvRows.filter(r=>r.include).reduce((a,r)=>a+Number(r.val),0))}</td></tr></tfoot>
+        </table>)}
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:16}}>
+        <button style={S.btnO} onClick={()=>setShowPdfCsv(false)}>Cancelar</button>
+        <button style={S.btn()} onClick={confirmPdfCsv} disabled={!pdfCsvRows.some(r=>r.include)}>Importar {pdfCsvRows.filter(r=>r.include).length} lançamentos</button>
+      </div>
+    </div></div>)}
     {showImport&&importItems.length>0&&(<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:100,display:"flex",justifyContent:"center",alignItems:"center"}}><div style={{background:P.surface,borderRadius:14,padding:24,maxWidth:800,width:"90%",maxHeight:"80vh",overflow:"auto",border:`1px solid ${P.border}`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><div style={{fontSize:16,fontWeight:700}}>Importar Fatura ({importItems.length} itens{dupCount>0&&<span style={{color:P.red,fontWeight:400,fontSize:12}}> · {dupCount} duplicados</span>})</div><button style={S.btnO} onClick={()=>{setShowImport(false);setImportItems([]);}}>✕ Cancelar</button></div>
       <div style={{fontSize:11,color:P.textDim,marginBottom:12}}>Itens duplicados (mesma data, descrição e valor) ficam destacados em vermelho e não serão importados. Clique no ✕ da coluna "Dup" para forçar a inclusão.</div>

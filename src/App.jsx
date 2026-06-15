@@ -595,52 +595,68 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
   const saveCatMap=m=>{setCatMap(m);sv("ip8-catMap",m);};
   // Parse CSV/OFX credit card statement
   // PDF text extraction via CDN
-  const extractPdfText=async(file)=>{
-    if(!window.pdfjsLib){await new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
-    const pdfjsLib=window.pdfjsLib;
-    pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-    const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;
-    // Extract with position info to reconstruct table rows
-    const rows=[];
-    for(let i=1;i<=pdf.numPages;i++){const page=await pdf.getPage(i);const content=await page.getTextContent();
-      // Group items by Y position (same row = same Y ±4px)
-      const byY={};content.items.forEach(item=>{const y=Math.round(item.transform[5]/4)*4;if(!byY[y])byY[y]=[];byY[y].push({x:item.transform[4],str:item.str});});
-      Object.keys(byY).sort((a,b)=>Number(b)-Number(a)).forEach(y=>{
-        const rowItems=byY[y].sort((a,b)=>a.x-b.x);rows.push(rowItems.map(i=>i.str).join("\t"));
-      });
-    }
-    return rows.join("\n");
+  const[showPdfDebug,setShowPdfDebug]=useState(false);const[pdfRawText,setPdfRawText]=useState("");
+  const handlePdfDebug=async(e)=>{const file=e.target.files[0];if(!file)return;setPdfCsvLoading(true);
+    try{
+      const pdfjsLib=await loadPdfJs();
+      const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+      const rows=[];
+      for(let i=1;i<=pdf.numPages;i++){const page=await pdf.getPage(i);const content=await page.getTextContent();
+        const byY={};content.items.forEach(item=>{const y=Math.round(item.transform[5]);if(!byY[y])byY[y]=[];byY[y].push({x:Math.round(item.transform[4]),str:item.str});});
+        Object.keys(byY).sort((a,b)=>Number(b)-Number(a)).forEach(y=>{const rowItems=byY[y].sort((a,b)=>a.x-b.x);rows.push(`Y${y}: `+rowItems.map(i=>`[${i.str}]`).join(" "));});
+      }
+      setPdfRawText(rows.join("\n"));setShowPdfDebug(true);
+    }catch(err){alert("Erro: "+err.message);}
+    setPdfCsvLoading(false);e.target.value="";
   };
+  const loadPdfJs=()=>new Promise((res,rej)=>{if(window.pdfjsLib)return res(window.pdfjsLib);const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";s.onload=()=>{window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";res(window.pdfjsLib);};s.onerror=rej;document.head.appendChild(s);});
   // PDF to CSV converter
   const[showPdfCsv,setShowPdfCsv]=useState(false);const[pdfCsvRows,setPdfCsvRows]=useState([]);const[pdfCsvLoading,setPdfCsvLoading]=useState(false);
   const handlePdfToCsv=async(e)=>{const file=e.target.files[0];if(!file)return;setPdfCsvLoading(true);
     try{
-      const text=await extractPdfText(file);const lines=text.split("\n").filter(l=>l.trim());const rows=[];
-      lines.forEach(line=>{
-        // Sisprime format: date\tdoc\thistorico\tdescricao\tdebito\tcredito\tsaldo
-        const parts=line.split("\t");
-        // Check if first column is a date
-        const dateMatch=parts[0]?.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-        if(dateMatch&&parts.length>=3){
-          const dt=`${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
-          // Find description and debit value
-          // Skip doc number (numeric only)
-          const textParts=parts.slice(1).filter(p=>p.trim()&&!p.trim().match(/^\d{5,}$/));
-          // Find money values (R$ X.XXX,XX pattern)
-          const moneyParts=textParts.filter(p=>p.trim().match(/^\d[\d.,]*$/));
-          const textDesc=textParts.filter(p=>!p.trim().match(/^\d[\d.,]*$/)&&!p.toLowerCase().includes("pagamento pix")&&!p.toLowerCase().includes("débito pix")&&!p.toLowerCase().includes("liq. eletrônica")&&!p.toLowerCase().includes("ted"));
-          const historico=textParts.filter(p=>p.toLowerCase().includes("pix")||p.toLowerCase().includes("ted")||p.toLowerCase().includes("liq."))[0]||"";
-          const desc=(textDesc.join(" ")||parts.slice(3,5).join(" ")).trim();
-          // First money value is debit, last is saldo
-          if(moneyParts.length>=1&&desc){
-            const val=moneyParts[0].replace(/\./g,"").replace(",",".");
-            if(Number(val)>0)rows.push({dt,historico:historico.trim(),desc:desc.trim(),val,include:true,categoria:catMap[desc.trim().toUpperCase()]||guessCategory(desc.trim())});
-          }
-        }
+      const pdfjsLib=await loadPdfJs();
+      const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+      const allItems=[];
+      for(let pg=1;pg<=pdf.numPages;pg++){const page=await pdf.getPage(pg);const content=await page.getTextContent();
+        content.items.forEach(item=>{if(item.str.trim())allItems.push({y:item.transform[5],x:item.transform[4],str:item.str.trim()});});
+      }
+      // Group into rows by Y (tolerance 3px)
+      allItems.sort((a,b)=>b.y-a.y);
+      const lineGroups=[];let curY=null,curGroup=[];
+      allItems.forEach(item=>{if(curY===null||Math.abs(item.y-curY)>3){if(curGroup.length)lineGroups.push([...curGroup]);curGroup=[];curY=item.y;}curGroup.push(item);});
+      if(curGroup.length)lineGroups.push(curGroup);
+      // Reconstruct lines as pipe-separated (PDF.js extracts columns as separate items)
+      const rawLines=lineGroups.map(g=>g.sort((a,b)=>a.x-b.x).map(i=>i.str).join(" | "));
+      setPdfRawText(rawLines.join("\n"));
+      const rows=[];
+      // Format: "18/05/2026 38372267 | Pagamento Pix | SHPP BRASIL INSTITUI | R$ 45,78 | R$ 5.285,71"
+      // Or:     "08/06/2026 Unimed jun | Liq. Eletrônica IB | ASPRF PR | R$ 1.676,01 | R$ 5.509,47"
+      rawLines.forEach(line=>{
+        // Must start with a date
+        const dateM=line.match(/^(\d{2})\/(\d{2})\/(\d{4})/);if(!dateM)return;
+        const dt=`${dateM[3]}-${dateM[2]}-${dateM[1]}`;
+        const parts=line.split("|").map(p=>p.trim()).filter(p=>p);
+        if(parts.length<3)return;
+        // parts[0] = "18/05/2026 38372267"  (date + docnum)
+        // parts[1] = "Pagamento Pix" or "Débito Pix" or "Liq. Eletrônica IB" or "Ted"
+        // parts[2] = description (beneficiary name)
+        // parts[3] = R$ debit amount
+        // parts[4] = R$ saldo
+        const historico=parts[1]||"";
+        const desc=parts[2]||"";
+        // Find debit value - first R$ XX,XX that is NOT the saldo
+        const moneyRe=/R\$\s*([\d.]+,\d{2})/;
+        const debitPart=parts[3]||"";const debitM=debitPart.match(moneyRe);
+        if(!debitM)return;
+        const val=Number(debitM[1].replace(/\./g,"").replace(",","."))||0;
+        if(val<=0)return;
+        const dUp=desc.toUpperCase();
+        // Skip self-transfers and ignored entries
+        if(IGNORE_EXTRATO.some(ig=>dUp.includes(ig)))return;
+        if(!desc||desc.length<2)return;
+        rows.push({dt,historico:historico.trim(),desc:desc.trim(),val:val.toFixed(2),include:true,categoria:catMap[dUp]||guessCategory(desc.trim())});
       });
-      // Remove duplicates and entries to self
-      const filtered=rows.filter(r=>!r.desc.toUpperCase().includes("IVAN BIALECKI")&&!IGNORE_EXTRATO.some(ig=>r.desc.toUpperCase().includes(ig)));
-      setPdfCsvRows(filtered);setShowPdfCsv(true);
+      setPdfCsvRows(rows);setShowPdfCsv(true);
     }catch(err){alert("Erro ao ler PDF: "+err.message);}
     setPdfCsvLoading(false);e.target.value="";
   };
@@ -797,7 +813,8 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
     {showPdfCsv&&(<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:100,display:"flex",justifyContent:"center",alignItems:"center"}}><div style={{background:P.surface,borderRadius:14,padding:24,maxWidth:820,width:"92%",maxHeight:"85vh",overflow:"auto",border:`1px solid ${P.border}`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={{fontSize:16,fontWeight:700}}>📄 Extrato PDF — {pdfCsvRows.length} transações encontradas</div><button style={S.btnO} onClick={()=>setShowPdfCsv(false)}>✕</button></div>
       <div style={{fontSize:11,color:P.textDim,marginBottom:14}}>Revise os lançamentos. Desmarque os que não deseja importar. Edite a categoria se necessário.</div>
-      {pdfCsvRows.length===0?(<div style={{textAlign:"center",padding:40,color:P.textMuted}}>Nenhuma transação identificada neste PDF. Tente o botão 🏦 Extrato Banco com arquivo CSV.</div>):(
+      {pdfCsvRows.length===0?(<div><div style={{textAlign:"center",padding:20,color:P.textMuted,marginBottom:12}}>Nenhuma transação identificada neste PDF.</div>
+        {pdfRawText&&(<div><div style={{fontSize:11,fontWeight:700,color:P.textDim,marginBottom:6}}>Texto extraído do PDF (para diagnóstico):</div><textarea readOnly value={pdfRawText} style={{width:"100%",height:300,fontSize:9,fontFamily:"monospace",background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:6,padding:8,color:P.textDim,resize:"vertical"}}/></div>)}</div>):(
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
           <thead><tr><th style={S.th}><input type="checkbox" checked={pdfCsvRows.every(r=>r.include)} onChange={e=>{const v=e.target.checked;setPdfCsvRows(p=>p.map(r=>({...r,include:v})));}} title="Marcar todos"/></th><th style={S.th}>Data</th><th style={S.th}>Descrição</th><th style={S.th}>Categoria</th><th style={S.th}>Valor</th></tr></thead>
           <tbody>{pdfCsvRows.map((row,idx)=>(<tr key={idx} style={{opacity:row.include?1:0.4}}>

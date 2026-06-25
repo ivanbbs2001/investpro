@@ -562,8 +562,8 @@ function ApTab({data,setData,banks,meta,setMeta}){const P=useT();const S=useS();
 }
 
 /* ORC — complete rewrite */
-const ORC_C=["Água","Almoços","Assinaturas","Celular","Clube","Comer Fora","Diarista","Educação","Escola Liza","Extra","Gasolina","iFood","INSS","Internet","Investimentos","Jardim","Lazer","Luz","Mercado","Moradia","Netflix","Piscina","Preta","Remédio","Seguro Vida","Sepal","Shopee","Telefone","Unimed","Outros"].sort((a,b)=>a.localeCompare(b,"pt-BR"));
-const CAT_EMOJI={"Água":"💧","Almoços":"🍽️","Assinaturas":"📱","Celular":"📞","Clube":"🏊","Comer Fora":"🍔","Diarista":"🧹","Educação":"📚","Escola Liza":"🎒","Extra":"⭐","Gasolina":"⛽","iFood":"🛵","INSS":"🏛️","Internet":"🌐","Investimentos":"📈","Jardim":"🌿","Lazer":"🎭","Luz":"💡","Mercado":"🛒","Moradia":"🏠","Netflix":"🎬","Piscina":"🏊","Preta":"🐾","Remédio":"💊","Seguro Vida":"🛡️","Sepal":"🏢","Shopee":"📦","Telefone":"☎️","Unimed":"🏥","Salário":"💰","Vale Refeição":"🍽️","Renda Extra":"💵","Vale Alimentação":"🥗","Outros":"📌"};
+const ORC_C=["Água","Almoços","Assinaturas","Celular","Clube","Comer Fora","Diarista","Educação","Escola Liza","Extra","Gasolina","iFood","INSS","Internet","Investimentos","Jardim","Lazer","Luz","Mercado","Moradia","Netflix","Piscina","Preta","Remédio","Seguro Vida","Sepal","Shopee","Telefone","Unimed","Viagem","Outros"].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+const CAT_EMOJI={"Água":"💧","Almoços":"🍽️","Assinaturas":"📱","Celular":"📞","Clube":"🏊","Comer Fora":"🍔","Diarista":"🧹","Educação":"📚","Escola Liza":"🎒","Extra":"⭐","Gasolina":"⛽","iFood":"🛵","INSS":"🏛️","Internet":"🌐","Investimentos":"📈","Jardim":"🌿","Lazer":"🎭","Luz":"💡","Mercado":"🛒","Moradia":"🏠","Netflix":"🎬","Piscina":"🏊","Preta":"🐾","Remédio":"💊","Seguro Vida":"🛡️","Sepal":"🏢","Shopee":"📦","Telefone":"☎️","Unimed":"🏥","Viagem":"✈️","Salário":"💰","Vale Refeição":"🍽️","Renda Extra":"💵","Vale Alimentação":"🥗","Outros":"📌"};
 const catEmoji=cat=>CAT_EMOJI[cat]||"📌";
 const ORC_REC=["Salário","Honorários","Outros"];
 const AUTO_FIXO=["Água","Luz","Internet","Telefone","Unimed","Diarista","Clube","Educação","Escola Liza","Preta","Gasolina","Jardim","Seguro Vida","Piscina","Assinaturas","Sepal","INSS","Mercado"];
@@ -681,9 +681,9 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
   const IGNORE_EXTRATO=["PAGAMENTO RECEBIDO","PAGAMENTO DE FATURA","PAG FATURA","APLICACAO","RESGATE","TRANSFERENCIA ENTRE","TED ENTRE","RENDIMENTO","IOF","TARIFA","JUROS","SALDO","IVAN BIALECKI"];
   const parseTextToItems=(text,fileName,isExtrato)=>{
     const lines=text.split("\n").map(l=>l.trim()).filter(l=>l);const items=[];
-    // Detect separator from first data line
-    const detectSep=(line)=>{if(line.includes(";"))return";";if(line.includes("\t"))return"\t";if(line.includes(",")&&!line.match(/,\d{2}/))return",";return null;};
-    const firstDataLine=lines.find((l,i)=>i>0&&l.trim())||"";const sep=detectSep(firstDataLine);
+    // Parse CSV respecting quoted fields: "value,with,commas"
+    const parseCSVLine=(line)=>{const result=[];let cur="",inQ=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){inQ=!inQ;}else if((c===","||c===";"||c==="\t")&&!inQ){result.push(cur.trim());cur="";}else{cur+=c;}}result.push(cur.trim());return result;};
+    const detectSep=(line)=>{if(line.includes(";"))return";";if(line.includes("\t"))return"\t";return",";};
     if(fileName.endsWith(".ofx")){
       const txns=text.split("<STMTTRN>").slice(1);
       txns.forEach(txn=>{const getField=(f)=>{const m=txn.match(new RegExp(`<${f}>(.*?)(?:<|\\n)`));return m?m[1].trim():"";};
@@ -708,8 +708,7 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
             items.push({id:uid(),data:dt,tipo:"Despesa",categoria:mapped,descricao:"PIX: "+d2,valor:val.toFixed(2),fixo:AUTO_FIXO.includes(mapped),original:d2});
           }return;
         }
-        const splitLine=(l)=>{if(l.includes(";"))return l.split(";");if(l.includes("\t"))return l.split("\t");
-          if(l.includes(",")&&(l.match(/^\d{4}-\d{2}-\d{2},/)||l.match(/^\d{2}[\/\-]\d{2}[\/\-]\d{4},/)))return l.split(",");return null;};
+        const splitLine=(l)=>parseCSVLine(l);
         const parts=splitLine(line)||[];let parsed=null;
         if(parts.length>=3){
           let dt=parts[0].trim(),desc=parts[1].trim(),val=0;
@@ -749,7 +748,7 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
     if(d.includes("FARMACIA")||d.includes("DROGARIA")||d.includes("REMEDIO"))return"Remédio";
     if(d.includes("NETFLIX")||d.includes("SPOTIFY")||d.includes("DISNEY")||d.includes("PRIME")||d.includes("YOUTUBE"))return"Assinaturas";
     if(d.includes("SHOPEE")||d.includes("MERCADOLIVRE")||d.includes("AMAZON")||d.includes("SHEIN"))return"Shopee";
-    if(d.includes("RESTAURANTE")||d.includes("PIZZARIA")||d.includes("BURGER")||d.includes("LANCHE"))return"Comer Fora";
+    if(d.includes("RESTAURANTE")||d.includes("PIZZARIA")||d.includes("BURGER")||d.includes("LANCHE")||d.includes("CAFE")||d.includes("CAFETERIA"))return"Comer Fora";
     if(d.includes("UNIMED")||d.includes("SAUDE")||d.includes("HOSPITAL")||d.includes("CLINICA"))return"Unimed";
     if(d.includes("LUZ")||d.includes("COPEL")||d.includes("ENERGIA"))return"Luz";
     if(d.includes("AGUA")||d.includes("SANEPAR"))return"Água";

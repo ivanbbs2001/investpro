@@ -1451,7 +1451,8 @@ function PrfTab({prfRef,sim,setSim,defSim}){const P=useT();const S=useS();const[
   const dSaldoTotal=dRestante+dGeccLiq;
   // ADFRON lost: days away × daily ADFRON rate
   const diasInteiros=Math.ceil(dDias);
-  const adfronPerdido=diasInteiros*(ref.diaADFRON||92);
+  const diasUteisAdfron=dIni&&dFim?networkDays(dIni,dFim):diasInteiros;
+  const adfronPerdido=diasUteisAdfron*(ref.diaADFRON||92);
   const saldoVsAdfron=dSaldoTotal-adfronPerdido;
   // ADFRON/GECC
   const adTotal=(Number(adDias)||0)*(ref.diaADFRON||92);
@@ -1503,7 +1504,7 @@ function PrfTab({prfRef,sim,setSim,defSim}){const P=useT();const S=useS();const[
           {dGeccLiq>0&&<><div style={{color:P.textDim,borderTop:`1px solid ${P.border}`,paddingTop:8}}>GECC ({dHorasGecc}h × {fmt(ref.horaGECC||165.78)} − 27,5%)</div><div style={{fontWeight:600,textAlign:"right",color:P.accent,borderTop:`1px solid ${P.border}`,paddingTop:8}}>+ {fmt(dGeccLiq)}</div>
           <div style={{fontSize:11,color:P.textMuted}}>Bruto: {fmt(dGeccBruto)}</div><div style={{fontSize:11,color:P.textMuted,textAlign:"right"}}>IR: - {fmt(dGeccBruto-dGeccLiq)}</div>
           <div style={{color:P.textDim,fontSize:14,fontWeight:700,borderTop:`2px solid ${P.cyan}`,paddingTop:8}}>Total com GECC</div><div style={{fontSize:20,fontWeight:700,color:P.cyan,textAlign:"right",borderTop:`2px solid ${P.cyan}`,paddingTop:8}}>{fmt(dSaldoTotal)}</div></>}
-          {dDias>0&&<><div style={{color:P.textDim,borderTop:`2px solid ${P.border}`,paddingTop:10,marginTop:4}}>ADFRON perdido ({diasInteiros}d × {fmt(ref.diaADFRON||92)})</div><div style={{fontWeight:600,textAlign:"right",color:P.red,borderTop:`2px solid ${P.border}`,paddingTop:10}}>- {fmt(adfronPerdido)}</div>
+          {dDias>0&&<><div style={{color:P.textDim,borderTop:`2px solid ${P.border}`,paddingTop:10,marginTop:4}}>ADFRON perdido ({diasUteisAdfron} dias úteis × {fmt(ref.diaADFRON||92)})</div><div style={{fontWeight:600,textAlign:"right",color:P.red,borderTop:`2px solid ${P.border}`,paddingTop:10}}>- {fmt(adfronPerdido)}</div>
           <div style={{color:P.textDim,fontSize:14,fontWeight:700,borderTop:`2px solid ${P.border}`,paddingTop:8}}>Saldo Final (Diárias{dGeccLiq>0?" + GECC":""} − ADFRON)</div><div style={{fontSize:22,fontWeight:700,color:saldoVsAdfron>=0?P.accent:P.red,textAlign:"right",borderTop:`2px solid ${P.border}`,paddingTop:8}}>{fmt(saldoVsAdfron)}</div>
           <div colSpan={2} style={{gridColumn:"1/-1",textAlign:"center",fontSize:11,marginTop:8,padding:"8px 12px",borderRadius:6,background:saldoVsAdfron>=0?P.accentGlow:P.redDim,color:saldoVsAdfron>=0?P.accent:P.red,fontWeight:600}}>{saldoVsAdfron>=0?"✓ Compensa viajar — saldo positivo após ADFRON":"✗ Não compensa — você perde dinheiro viajando"}</div></>}
         </div>

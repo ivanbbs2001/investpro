@@ -562,8 +562,8 @@ function ApTab({data,setData,banks,meta,setMeta}){const P=useT();const S=useS();
 }
 
 /* ORC — complete rewrite */
-const ORC_C=["Água","Almoços","Assinaturas","Celular","Clube","Comer Fora","Diarista","Educação","Escola Liza","Extra","Gasolina","iFood","INSS","Internet","Investimentos","Jardim","Lazer","Luz","Mercado","Moradia","Netflix","Piscina","Preta","Remédio","Seguro Vida","Sepal","Shopee","Telefone","Unimed","Viagem","Outros"].sort((a,b)=>a.localeCompare(b,"pt-BR"));
-const CAT_EMOJI={"Água":"💧","Almoços":"🍽️","Assinaturas":"📱","Celular":"📞","Clube":"🏊","Comer Fora":"🍔","Diarista":"🧹","Educação":"📚","Escola Liza":"🎒","Extra":"⭐","Gasolina":"⛽","iFood":"🛵","INSS":"🏛️","Internet":"🌐","Investimentos":"📈","Jardim":"🌿","Lazer":"🎭","Luz":"💡","Mercado":"🛒","Moradia":"🏠","Netflix":"🎬","Piscina":"🏊","Preta":"🐾","Remédio":"💊","Seguro Vida":"🛡️","Sepal":"🏢","Shopee":"📦","Telefone":"☎️","Unimed":"🏥","Viagem":"✈️","Salário":"💰","Vale Refeição":"🍽️","Renda Extra":"💵","Vale Alimentação":"🥗","Outros":"📌"};
+const ORC_C=["Água","Almoços","Assinaturas","Celular","Clube","Comer Fora","Diarista","Educação","Escola Liza","Escritório JU","Extra","Gasolina","iFood","INSS","Internet","Investimentos","Jardim","Lazer","Luz","Mercado","Moradia","Netflix","Piscina","Preta","Remédio","Seguro Vida","Sepal","Shopee","Telefone","Unimed","Viagem","Outros"].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+const CAT_EMOJI={"Água":"💧","Almoços":"🍽️","Assinaturas":"📱","Celular":"📞","Clube":"🏊","Comer Fora":"🍔","Diarista":"🧹","Educação":"📚","Escola Liza":"🎒","Escritório JU":"🏢","Extra":"⭐","Gasolina":"⛽","iFood":"🛵","INSS":"🏛️","Internet":"🌐","Investimentos":"📈","Jardim":"🌿","Lazer":"🎭","Luz":"💡","Mercado":"🛒","Moradia":"🏠","Netflix":"🎬","Piscina":"🏊","Preta":"🐾","Remédio":"💊","Seguro Vida":"🛡️","Sepal":"🏢","Shopee":"📦","Telefone":"☎️","Unimed":"🏥","Viagem":"✈️","Salário":"💰","Vale Refeição":"🍽️","Renda Extra":"💵","Vale Alimentação":"🥗","Outros":"📌"};
 const catEmoji=cat=>CAT_EMOJI[cat]||"📌";
 const ORC_REC=["Salário","Honorários","Outros"];
 const AUTO_FIXO=["Água","Luz","Internet","Telefone","Unimed","Diarista","Clube","Educação","Escola Liza","Preta","Gasolina","Jardim","Seguro Vida","Piscina","Assinaturas","Sepal","INSS","Mercado"];
@@ -742,13 +742,13 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
     setImportItems(processImportItems(items));if(items.length>0)setShowImport(true);}catch(err){alert("Erro ao ler arquivo: "+err.message);}e.target.value="";
   };
   const guessCategory=desc=>{const d=desc.toUpperCase();
-    if(d.includes("MERCADO")||d.includes("SUPERMERCADO")||d.includes("ATACADAO")||d.includes("CONDOR")||d.includes("MUFFATO")||d.includes("MUFFATAO")||d.includes("IRANI")||d.includes("FESTVAL")||d.includes("BEAL")||d.includes("COMERCIAL"))return"Mercado";
+    if(d.includes("MERCADO")||d.includes("SUPERMERCADO")||d.includes("ATACADAO")||d.includes("CONDOR")||d.includes("MUFFATO")||d.includes("MUFFATAO")||d.includes("IRANI")||d.includes("FESTVAL")||d.includes("BEAL")||d.includes("ATACADAO"))return"Mercado";
     if(d.includes("IFOOD")||d.includes("RAPPI")||d.includes("RITTER")||d.includes("IFD"))return"iFood";
     if(d.includes("GASOLINA")||d.includes("COMBUSTIVEL")||d.includes("POSTO")||d.includes("SHELL"))return"Gasolina";
-    if(d.includes("FARMACIA")||d.includes("DROGARIA")||d.includes("REMEDIO"))return"Remédio";
+    if(d.includes("FARMACIA")||d.includes("DROGARIA")||d.includes("REMEDIO")||d.includes("DEBORA ZANETTI"))return"Remédio";
     if(d.includes("NETFLIX")||d.includes("SPOTIFY")||d.includes("DISNEY")||d.includes("PRIME")||d.includes("YOUTUBE"))return"Assinaturas";
-    if(d.includes("SHOPEE")||d.includes("MERCADOLIVRE")||d.includes("AMAZON")||d.includes("SHEIN"))return"Shopee";
-    if(d.includes("RESTAURANTE")||d.includes("PIZZARIA")||d.includes("BURGER")||d.includes("LANCHE")||d.includes("CAFE")||d.includes("CAFETERIA"))return"Comer Fora";
+    if(d.includes("SHOPEE")||d.includes("MERCADOLIVRE")||d.includes("AMAZON")||d.includes("SHEIN")||d.includes("MELIMAIS"))return"Shopee";
+    if(d.includes("TABEMONO")||d.includes("DIVINO SABOR"))return"Almoços";if(d.includes("RESTAURANTE")||d.includes("PIZZARIA")||d.includes("BURGER")||d.includes("LANCHE")||d.includes("CAFE")||d.includes("CAFETERIA"))return"Comer Fora";
     if(d.includes("UNIMED")||d.includes("SAUDE")||d.includes("HOSPITAL")||d.includes("CLINICA"))return"Unimed";
     if(d.includes("LUZ")||d.includes("COPEL")||d.includes("ENERGIA"))return"Luz";
     if(d.includes("AGUA")||d.includes("SANEPAR"))return"Água";

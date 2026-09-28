@@ -1587,7 +1587,7 @@ function ImoveisTab({sim,setSim,defSim}){const P=useT();const S=useS();
   const[subImo,setSubImo]=useState("simulador");
   const[incc,setIncc]=useState("—");const[fipezap,setFipezap]=useState("—");const[loading,setLoading]=useState(false);
   const[hovApt,setHovApt]=useState(null);
-  const DEF_APT={valorAtual:"750000",prazoAnos:"10",inccAnual:"7",reservaAtual:"0",fgts:"0",aporteMensal:"",rendMensal:"1.0",itbi:"2",escritura:"1.5",corretagem:"6"};
+  const DEF_APT={valorAtual:"750000",prazoAnos:"10",inccAnual:"7",reservaAtual:"0",fgts:"0",aporteMensal:"",rendMensal:"1.0",itbi:"2",escritura:"1.5",corretagem:"6",imovelAtual:"0",valorizacaoImovel:"5"};
   const[apt,setApt]=useState(()=>ld("ip8-simApt",DEF_APT));const setA=(k,v)=>setApt(p=>({...p,[k]:v}));
   useEffect(()=>{sv("ip8-simApt",apt);},[apt]);
   const fetchIdx=async()=>{setLoading(true);try{const r=await fetch("https://api.bcb.gov.br/dados/serie/bcdata.sgs.27574/dados/ultimos/1?formato=json");if(r.ok){const d=await r.json();if(d[0])setIncc(d[0].valor);}const r2=await fetch("https://api.bcb.gov.br/dados/serie/bcdata.sgs.192/dados/ultimos/1?formato=json");if(r2.ok){const d2=await r2.json();if(d2[0])setFipezap(d2[0].valor+"% (INCC-DI)");}}catch(e){console.error(e);}setLoading(false);};
@@ -1657,20 +1657,43 @@ function ImoveisTab({sim,setSim,defSim}){const P=useT();const S=useS();
     </div>)}
     {subImo==="apartamento"&&(()=>{
       const vA=Number(apt.valorAtual)||750000,anos=Number(apt.prazoAnos)||10,inccA=Number(apt.inccAnual)||7,rendM=Number(apt.rendMensal)||1,reserva=Number(apt.reservaAtual)||0,fgts=Number(apt.fgts)||0,aporte=Number(apt.aporteMensal)||0,itbiPct=Number(apt.itbi)||2,escrituraPct=Number(apt.escritura)||1.5,corretagemPct=Number(apt.corretagem)||6,meses=anos*12,iM=rendM/100;
+      const imovelAtual=Number(apt.imovelAtual)||0,valorizImovel=Number(apt.valorizacaoImovel)||5;
+      // Custo futuro do apartamento
       const custoFuturo=vA*Math.pow(1+inccA/100,anos),custoAq=custoFuturo*(1+(itbiPct+escrituraPct+corretagemPct)/100);
+      // Valor futuro do imóvel atual
+      const imovelFuturo=imovelAtual>0?imovelAtual*Math.pow(1+valorizImovel/100,anos):0;
+      // Poupança sem vender imóvel
       const calcP=m=>{const fv=reserva*Math.pow(1+iM,m)+(aporte>0&&iM>0?aporte*(Math.pow(1+iM,m)-1)/iM:aporte*m);return fv+fgts;};
-      const poupTotal=calcP(meses),deficit=custoAq-poupTotal,viavel=deficit<=0;
+      const poupTotal=calcP(meses);
+      // Cenário 1: Vende o imóvel atual + poupança
+      const totalComVenda=poupTotal+imovelFuturo;
+      const saldoVenda=totalComVenda-custoAq;
+      // Cenário 2: Mantém imóvel + financia o novo pela Caixa
+      // Caixa: entrada mínima 20% para pessoa física (SFH), juros ~10,99% a.a. (média 2026), prazo 30 anos
+      const entradaCaixa=custoFuturo*0.20;const finCaixa=custoFuturo*0.80;const taxaCaixa=10.99/100/12;const prazoFinMeses=360;
+      const parcelaCaixa=finCaixa*(taxaCaixa*Math.pow(1+taxaCaixa,prazoFinMeses))/(Math.pow(1+taxaCaixa,prazoFinMeses)-1);
+      const totalJurosCaixa=parcelaCaixa*prazoFinMeses-finCaixa;
+      // Pode pagar entrada com poupança sem vender?
+      const poupCobre20=poupTotal>=entradaCaixa;
+      const deficit=custoAq-poupTotal,viavel=deficit<=0;
       const aporteNec=(()=>{const fvR=(reserva+fgts)*Math.pow(1+iM,meses),alvo=custoAq-fvR;if(alvo<=0)return 0;return iM>0?alvo*iM/(Math.pow(1+iM,meses)-1):alvo/meses;})();
-      const pts=[];for(let a=0;a<=Math.max(anos+5,15);a++){const p=calcP(a*12),c=vA*Math.pow(1+inccA/100,a)*(1+(itbiPct+escrituraPct+corretagemPct)/100);pts.push({a,poup:p,custo:c,diff:p-c});}
-      const beAno=pts.find(p=>p.diff>=0)?.a;
+      const pts=[];for(let a=0;a<=Math.max(anos+5,15);a++){const p=calcP(a*12),c=vA*Math.pow(1+inccA/100,a)*(1+(itbiPct+escrituraPct+corretagemPct)/100),imFut=imovelAtual>0?imovelAtual*Math.pow(1+valorizImovel/100,a):0;pts.push({a,poup:p,custo:c,diff:p-c,totalVenda:p+imFut});}
+      const beAno=pts.find(p=>p.diff>=0)?.a;const beAnoVenda=pts.find(p=>p.totalVenda>=p.custo)?.a;
       const cenarios=[{label:"Conservador",color:P.orange,inccA:8,rendM:0.8},{label:"Moderado",color:P.blue,inccA:6,rendM:1.0},{label:"Otimista",color:P.accent,inccA:5,rendM:1.2}].map(sc=>{const cf=vA*Math.pow(1+sc.inccA/100,anos)*(1+(itbiPct+escrituraPct+corretagemPct)/100),iMsc=sc.rendM/100,fvR=(reserva+fgts)*Math.pow(1+iMsc,meses),alvo=cf-fvR;return{...sc,cf,apNec:Math.max(0,alvo>0&&iMsc>0?alvo*iMsc/(Math.pow(1+iMsc,meses)-1):alvo>0?alvo/meses:0)};});
-      const maxV=Math.max(...pts.map(p=>Math.max(p.poup,p.custo)),1);
+      const maxV=Math.max(...pts.map(p=>Math.max(p.poup,p.custo,p.totalVenda||0)),1);
       const W=900,H=280,pd={t:20,r:30,b:40,l:100},cW=W-pd.l-pd.r,cH=H-pd.t-pd.b,xS=pts.length>1?cW/(pts.length-1):cW,yy=v=>pd.t+cH*(1-v/maxV);
       return(<div>
         <div style={S.card}><div style={{fontSize:13,fontWeight:700,color:P.textDim,marginBottom:4}}>Cascavel/PR — Apto 100m², 1 suíte + 2 qtos, lazer, próximo ao centro</div>
           <div style={{fontSize:11,color:P.textMuted,marginBottom:16}}>Referência: Ed. Lumini, Ed. Contemporaneau (108m²), Ed. Dr. Alberto Drummond · Faixa R$ 600k–900k</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:14}}>
-            {[{k:"valorAtual",l:"Valor atual (R$)",s:"10000"},{k:"prazoAnos",l:"Prazo (anos)",s:"1"},{k:"inccAnual",l:"INCC % a.a.",s:"0.5"},{k:"reservaAtual",l:"Reserva acumulada (R$)",s:"1000"},{k:"fgts",l:"FGTS disponível (R$)",s:"1000"},{k:"aporteMensal",l:"Aporte mensal (R$)",s:"100"},{k:"rendMensal",l:"Rendimento mensal %",s:"0.1"},{k:"itbi",l:"ITBI %",s:"0.1"},{k:"escritura",l:"Escritura+Registro %",s:"0.1"},{k:"corretagem",l:"Corretagem %",s:"0.5"}].map(f=>(<div key={f.k}><label style={S.lbl}>{f.l}</label><input style={S.i} type="number" step={f.s} value={apt[f.k]} onChange={e=>setA(f.k,e.target.value)}/></div>))}
+            {[{k:"valorAtual",l:"Valor atual do apto (R$)",s:"10000"},{k:"prazoAnos",l:"Prazo (anos)",s:"1"},{k:"inccAnual",l:"INCC % a.a.",s:"0.5"},{k:"reservaAtual",l:"Reserva acumulada (R$)",s:"1000"},{k:"fgts",l:"FGTS disponível (R$)",s:"1000"},{k:"aporteMensal",l:"Aporte mensal (R$)",s:"100"},{k:"rendMensal",l:"Rendimento mensal %",s:"0.1"},{k:"itbi",l:"ITBI %",s:"0.1"},{k:"escritura",l:"Escritura+Registro %",s:"0.1"},{k:"corretagem",l:"Corretagem %",s:"0.5"}].map(f=>(<div key={f.k}><label style={S.lbl}>{f.l}</label><input style={S.i} type="number" step={f.s} value={apt[f.k]} onChange={e=>setA(f.k,e.target.value)}/></div>))}
+          </div>
+          <div style={{borderTop:`1px solid ${P.border}`,marginTop:16,paddingTop:16}}>
+            <div style={{fontSize:12,fontWeight:700,color:P.textDim,marginBottom:12}}>🏡 Imóvel atual (para projeção de venda)</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:14}}>
+              <div><label style={S.lbl}>Valor do imóvel atual (R$)</label><input style={S.i} type="number" step="10000" value={apt.imovelAtual} onChange={e=>setA("imovelAtual",e.target.value)}/></div>
+              <div><label style={S.lbl}>Valorização anual esperada (%)</label><input style={S.i} type="number" step="0.5" value={apt.valorizacaoImovel} onChange={e=>setA("valorizacaoImovel",e.target.value)}/></div>
+            </div>
           </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:14,marginBottom:20}}>
@@ -1679,11 +1702,14 @@ function ImoveisTab({sim,setSim,defSim}){const P=useT();const S=useS();
           <div style={{...S.card,borderLeft:`4px solid ${P.cyan}`}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Poupança em {anos} anos</div><div style={{fontSize:18,fontWeight:700,color:P.cyan}}>{fmt(poupTotal)}</div><div style={{fontSize:10,color:P.textDim}}>Reserva+FGTS+Aportes · {rendM}%/mês</div></div>
           <div style={{...S.card,borderLeft:`4px solid ${viavel?P.accent:P.red}`,background:viavel?P.accentGlow:P.redDim}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>{viavel?"✓ Superávit":"⚠ Déficit"}</div><div style={{fontSize:20,fontWeight:700,color:viavel?P.accent:P.red}}>{fmt(Math.abs(deficit))}</div><div style={{fontSize:10,color:P.textDim}}>{viavel?"Objetivo em "+anos+" anos":"Falta para o objetivo"}</div></div>
           {!viavel&&<div style={{...S.card,borderLeft:`4px solid ${P.purple}`}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Aporte necessário ({anos}a)</div><div style={{fontSize:20,fontWeight:700,color:P.purple}}>{fmt(aporteNec)}/mês</div>{aporte>0&&<div style={{fontSize:10,color:P.orange}}>Atual: {fmt(aporte)} · Falta: {fmt(Math.max(0,aporteNec-aporte))}/mês</div>}</div>}
-          {beAno!==undefined&&<div style={{...S.card,borderLeft:`4px solid ${P.accent}`}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Viável a partir de</div><div style={{fontSize:20,fontWeight:700,color:P.accent}}>Ano {beAno}</div><div style={{fontSize:10,color:P.textDim}}>{new Date().getFullYear()+beAno}</div></div>}
+          {beAno!==undefined&&<div style={{...S.card,borderLeft:`4px solid ${P.accent}`}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Viável (só poupança)</div><div style={{fontSize:20,fontWeight:700,color:P.accent}}>Ano {beAno}</div><div style={{fontSize:10,color:P.textDim}}>{new Date().getFullYear()+beAno}</div></div>}
+          {imovelAtual>0&&<div style={{...S.card,borderLeft:`4px solid ${P.yellow}`}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Imóvel atual em {anos} anos</div><div style={{fontSize:18,fontWeight:700,color:P.yellow}}>{fmt(imovelFuturo)}</div><div style={{fontSize:10,color:P.textDim}}>Valorização {valorizImovel}% a.a. · hoje: {fmt(imovelAtual)}</div></div>}
+          {imovelAtual>0&&<div style={{...S.card,borderLeft:`4px solid ${saldoVenda>=0?P.accent:P.orange}`,background:saldoVenda>=0?P.accentGlow:P.orangeDim}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Cenário: Vende o imóvel atual</div><div style={{fontSize:18,fontWeight:700,color:saldoVenda>=0?P.accent:P.orange}}>{saldoVenda>=0?"✓ Sobra "+fmt(saldoVenda):"Falta "+fmt(-saldoVenda)}</div><div style={{fontSize:10,color:P.textDim}}>Poupança {fmt(poupTotal)} + Imóvel {fmt(imovelFuturo)}</div></div>}
+          {beAnoVenda!==undefined&&imovelAtual>0&&<div style={{...S.card,borderLeft:`4px solid ${P.cyan}`}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Viável (vendendo imóvel)</div><div style={{fontSize:20,fontWeight:700,color:P.cyan}}>Ano {beAnoVenda}</div><div style={{fontSize:10,color:P.textDim}}>{new Date().getFullYear()+beAnoVenda}</div></div>}
         </div>
         <div style={{...S.card,padding:20,marginBottom:20}}>
           <div style={{fontSize:12,fontWeight:700,color:P.textDim,marginBottom:10}}>Poupança vs Custo do Imóvel</div>
-          <div style={{display:"flex",gap:16,marginBottom:8}}><div style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}><div style={{width:14,height:3,background:P.accent,borderRadius:2}}/><span style={{color:P.textDim}}>Poupança</span></div><div style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}><div style={{width:14,height:3,background:P.red,borderRadius:2}}/><span style={{color:P.textDim}}>Custo total</span></div>{beAno!==undefined&&<span style={{fontSize:11,color:P.accent,fontWeight:600}}>✓ Viável em {new Date().getFullYear()+beAno}</span>}</div>
+          <div style={{display:"flex",gap:16,marginBottom:8}}><div style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}><div style={{width:14,height:3,background:P.accent,borderRadius:2}}/><span style={{color:P.textDim}}>Poupança</span></div><div style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}><div style={{width:14,height:3,background:P.red,borderRadius:2}}/><span style={{color:P.textDim}}>Custo total</span></div>{imovelAtual>0&&<div style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}><div style={{width:14,height:3,background:P.yellow,borderRadius:2,borderStyle:"dashed"}}/><span style={{color:P.textDim}}>Poupança + Imóvel atual</span></div>}{beAno!==undefined&&<span style={{fontSize:11,color:P.accent,fontWeight:600}}>✓ Poupança: {new Date().getFullYear()+beAno}</span>}{beAnoVenda!==undefined&&imovelAtual>0&&<span style={{fontSize:11,color:P.cyan,fontWeight:600}}>✓ Com venda: {new Date().getFullYear()+beAnoVenda}</span>}</div>
           <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" onMouseLeave={()=>setHovApt(null)}>
             {[0,0.25,0.5,0.75,1].map(p=>(<g key={p}><line x1={pd.l} y1={pd.t+cH*(1-p)} x2={W-pd.r} y2={pd.t+cH*(1-p)} stroke={P.border} strokeWidth="1"/><text x={pd.l-8} y={pd.t+cH*(1-p)+4} textAnchor="end" fontSize="9" fill={P.textMuted}>{fmt(maxV*p)}</text></g>))}
             {pts.map((p,i)=>(<text key={i} x={pd.l+i*xS} y={H-8} textAnchor="middle" fontSize="8" fill={P.textMuted}>{new Date().getFullYear()+p.a}</text>))}
@@ -1693,6 +1719,7 @@ function ImoveisTab({sim,setSim,defSim}){const P=useT();const S=useS();
             <polyline points={pts.map((p,i)=>`${pd.l+i*xS},${yy(p.poup)}`).join(" ")} fill="none" stroke={P.accent} strokeWidth="2.5" strokeLinejoin="round"/>
             <path d={`M${pd.l},${yy(pts[0]?.custo||0)} ${pts.map((p,i)=>`L${pd.l+i*xS},${yy(p.custo)}`).join(" ")} L${pd.l+(pts.length-1)*xS},${pd.t+cH} L${pd.l},${pd.t+cH} Z`} fill={P.red+"14"}/>
             <polyline points={pts.map((p,i)=>`${pd.l+i*xS},${yy(p.custo)}`).join(" ")} fill="none" stroke={P.red} strokeWidth="2.5" strokeLinejoin="round"/>
+            {imovelAtual>0&&<polyline points={pts.map((p,i)=>`${pd.l+i*xS},${yy(p.totalVenda)}`).join(" ")} fill="none" stroke={P.yellow} strokeWidth="2" strokeDasharray="8,4" strokeLinejoin="round"/>}
             {pts.map((p,i)=>{const isH=hovApt===i;const cx=pd.l+i*xS;return(<g key={i}><rect x={cx-22} y={pd.t} width={44} height={cH} fill="transparent" onMouseEnter={()=>setHovApt(i)}/>{isH&&<><circle cx={cx} cy={yy(p.poup)} r="5" fill={P.accent} stroke={P.bg} strokeWidth="2"/><circle cx={cx} cy={yy(p.custo)} r="5" fill={P.red} stroke={P.bg} strokeWidth="2"/><rect x={Math.min(cx-65,W-pd.r-140)} y={pd.t} width={140} height={58} rx={5} fill={P.surface} stroke={P.border} strokeWidth="1"/><text x={Math.min(cx,W-pd.r-70)} y={pd.t+14} textAnchor="middle" fontSize="9" fontWeight="700" fill={P.textDim}>{new Date().getFullYear()+p.a}</text><text x={Math.min(cx,W-pd.r-70)} y={pd.t+28} textAnchor="middle" fontSize="9" fill={P.accent}>Poupança: {fmt(p.poup)}</text><text x={Math.min(cx,W-pd.r-70)} y={pd.t+42} textAnchor="middle" fontSize="9" fill={P.red}>Custo: {fmt(p.custo)}</text><text x={Math.min(cx,W-pd.r-70)} y={pd.t+56} textAnchor="middle" fontSize="9" fill={p.diff>=0?P.accent:P.orange}>{p.diff>=0?"✓ "+fmt(p.diff):"Falta "+fmt(-p.diff)}</text></>}</g>);})}
           </svg>
         </div>
@@ -1711,6 +1738,40 @@ function ImoveisTab({sim,setSim,defSim}){const P=useT();const S=useS();
               </div>
             </div>))}
           </div>
+        </div>
+        {/* Caixa Econômica Financing */}
+        <div style={S.card}><div style={{fontSize:13,fontWeight:700,color:P.textDim,marginBottom:4}}>🏦 Projeção de Financiamento — Caixa Econômica Federal</div>
+          <div style={{fontSize:11,color:P.textMuted,marginBottom:16}}>Modalidade SFH · Entrada mínima 20% · Taxa média ~{(10.99).toFixed(2)}% a.a. · Prazo 30 anos</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14,marginBottom:16}}>
+            <div style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Valor do apto em {anos} anos</div><div style={{fontSize:16,fontWeight:700,color:P.text}}>{fmt(custoFuturo)}</div></div>
+            <div style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Entrada mínima (20%)</div><div style={{fontSize:16,fontWeight:700,color:P.orange}}>{fmt(entradaCaixa)}</div></div>
+            <div style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Financiamento (80%)</div><div style={{fontSize:16,fontWeight:700,color:P.blue}}>{fmt(finCaixa)}</div></div>
+            <div style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Parcela mensal estimada</div><div style={{fontSize:18,fontWeight:700,color:P.red}}>{fmt(parcelaCaixa)}</div><div style={{fontSize:10,color:P.textDim}}>10,99% a.a. / 30 anos</div></div>
+            <div style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Total pago em 30 anos</div><div style={{fontSize:16,fontWeight:700,color:P.red}}>{fmt(parcelaCaixa*360)}</div><div style={{fontSize:10,color:P.textDim}}>Juros: {fmt(totalJurosCaixa)}</div></div>
+            <div style={{background:poupCobre20?P.accentGlow:P.orangeDim,border:`1px solid ${poupCobre20?P.accent:P.orange}44`,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Poupança cobre entrada?</div><div style={{fontSize:16,fontWeight:700,color:poupCobre20?P.accent:P.orange}}>{poupCobre20?"✓ Sim":"✗ Não"}</div><div style={{fontSize:10,color:P.textDim}}>{poupCobre20?`Sobra ${fmt(poupTotal-entradaCaixa)}`:`Falta ${fmt(entradaCaixa-poupTotal)}`}</div></div>
+          </div>
+          {imovelAtual>0&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+            <div style={{background:P.surfaceAlt,border:`1px solid ${saldoVenda>=0?P.accent:P.orange}44`,borderRadius:10,padding:"16px 18px"}}>
+              <div style={{fontSize:12,fontWeight:700,color:P.textDim,marginBottom:10}}>🔄 Opção 1: Vender imóvel + comprar à vista</div>
+              <div style={{fontSize:11,display:"grid",gap:5}}>
+                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:P.textMuted}}>Poupança</span><b>{fmt(poupTotal)}</b></div>
+                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:P.textMuted}}>+ Imóvel atual</span><b>{fmt(imovelFuturo)}</b></div>
+                <div style={{display:"flex",justifyContent:"space-between",borderTop:`1px solid ${P.border}`,paddingTop:6,marginTop:2}}><span style={{color:P.textMuted}}>Total disponível</span><b>{fmt(totalComVenda)}</b></div>
+                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:P.textMuted}}>Custo aquisição</span><b>{fmt(custoAq)}</b></div>
+                <div style={{fontSize:16,fontWeight:700,color:saldoVenda>=0?P.accent:P.orange,marginTop:4,textAlign:"center"}}>{saldoVenda>=0?"✓ Sobra "+fmt(saldoVenda):"⚠ Falta "+fmt(-saldoVenda)}</div>
+              </div>
+            </div>
+            <div style={{background:P.surfaceAlt,border:`1px solid ${P.blue}44`,borderRadius:10,padding:"16px 18px"}}>
+              <div style={{fontSize:12,fontWeight:700,color:P.textDim,marginBottom:10}}>🏠 Opção 2: Manter imóvel + Financiar pela Caixa</div>
+              <div style={{fontSize:11,display:"grid",gap:5}}>
+                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:P.textMuted}}>Entrada (20%)</span><b>{fmt(entradaCaixa)}</b></div>
+                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:P.textMuted}}>Poupança disponível</span><b style={{color:poupCobre20?P.accent:P.orange}}>{fmt(poupTotal)}</b></div>
+                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:P.textMuted}}>Parcela mensal</span><b style={{color:P.red}}>{fmt(parcelaCaixa)}</b></div>
+                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:P.textMuted}}>Mantém imóvel atual</span><b style={{color:P.yellow}}>{fmt(imovelFuturo)}</b></div>
+                <div style={{fontSize:11,fontWeight:600,color:P.blue,marginTop:4,textAlign:"center"}}>{poupCobre20?"✓ Entrada coberta pela poupança":"⚠ Poupança insuficiente para entrada"}</div>
+              </div>
+            </div>
+          </div>)}
         </div>
       </div>);
     })()}

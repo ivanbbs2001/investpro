@@ -1673,8 +1673,19 @@ function ImoveisTab({sim,setSim,defSim}){const P=useT();const S=useS();
       const entradaCaixa=custoFuturo*0.20;const finCaixa=custoFuturo*0.80;const taxaCaixa=10.99/100/12;const prazoFinMeses=360;
       const parcelaCaixa=finCaixa*(taxaCaixa*Math.pow(1+taxaCaixa,prazoFinMeses))/(Math.pow(1+taxaCaixa,prazoFinMeses)-1);
       const totalJurosCaixa=parcelaCaixa*prazoFinMeses-finCaixa;
-      // Pode pagar entrada com poupança sem vender?
+      // Saldo da poupança após pagar entrada
+      const saldoPosEntrada=Math.max(0,poupTotal-entradaCaixa);
       const poupCobre20=poupTotal>=entradaCaixa;
+      // Quantas parcelas o saldo restante quita (sem rendimento)
+      const parcelasQuitadas=parcelaCaixa>0?Math.floor(saldoPosEntrada/parcelaCaixa):0;
+      // Saldo residual: usando saldo + rendimento (iM/mês) para amortizar o financiamento
+      // Calcular em quantos meses o saldo pós-entrada zera o financiamento
+      // FV do saldo - PV das parcelas pagas = 0 → resolve numericamente
+      const calcMesesQuitacao=(saldo,fin,taxa,parcela)=>{if(saldo>=fin)return 0;if(saldo<=0)return prazoFinMeses;let saldoFin=fin,saldoPoup=saldo;for(let m=1;m<=prazoFinMeses;m++){saldoPoup=saldoPoup*(1+taxa);if(saldoPoup>=saldoFin){return m;}saldoFin=saldoFin*(1+taxa)-parcela;if(saldoFin<=0)return m;}return prazoFinMeses;};
+      const mesesParaQuitar=calcMesesQuitacao(saldoPosEntrada,finCaixa,iM,parcelaCaixa);
+      const economiaJuros=totalJurosCaixa-(parcelaCaixa*mesesParaQuitar-finCaixa*(mesesParaQuitar<prazoFinMeses?1:0));
+      // Perpetuidade: rendimento mensal do saldo cobre a parcela?
+      const rendMensalSaldo=saldoPosEntrada*iM;const poupSustentaFin=rendMensalSaldo>=parcelaCaixa;
       const deficit=custoAq-poupTotal,viavel=deficit<=0;
       const aporteNec=(()=>{const fvR=(reserva+fgts)*Math.pow(1+iM,meses),alvo=custoAq-fvR;if(alvo<=0)return 0;return iM>0?alvo*iM/(Math.pow(1+iM,meses)-1):alvo/meses;})();
       const pts=[];for(let a=0;a<=Math.max(anos+5,15);a++){const p=calcP(a*12),c=vA*Math.pow(1+inccA/100,a)*(1+(itbiPct+escrituraPct+corretagemPct)/100),imFut=imovelAtual>0?imovelAtual*Math.pow(1+valorizImovel/100,a):0;pts.push({a,poup:p,custo:c,diff:p-c,totalVenda:p+imFut});}
@@ -1748,7 +1759,8 @@ function ImoveisTab({sim,setSim,defSim}){const P=useT();const S=useS();
             <div style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Financiamento (80%)</div><div style={{fontSize:16,fontWeight:700,color:P.blue}}>{fmt(finCaixa)}</div></div>
             <div style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Parcela mensal estimada</div><div style={{fontSize:18,fontWeight:700,color:P.red}}>{fmt(parcelaCaixa)}</div><div style={{fontSize:10,color:P.textDim}}>10,99% a.a. / 30 anos</div></div>
             <div style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Total pago em 30 anos</div><div style={{fontSize:16,fontWeight:700,color:P.red}}>{fmt(parcelaCaixa*360)}</div><div style={{fontSize:10,color:P.textDim}}>Juros: {fmt(totalJurosCaixa)}</div></div>
-            <div style={{background:poupCobre20?P.accentGlow:P.orangeDim,border:`1px solid ${poupCobre20?P.accent:P.orange}44`,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Poupança cobre entrada?</div><div style={{fontSize:16,fontWeight:700,color:poupCobre20?P.accent:P.orange}}>{poupCobre20?"✓ Sim":"✗ Não"}</div><div style={{fontSize:10,color:P.textDim}}>{poupCobre20?`Sobra ${fmt(poupTotal-entradaCaixa)}`:`Falta ${fmt(entradaCaixa-poupTotal)}`}</div></div>
+            <div style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Poupança cobre entrada?</div><div style={{fontSize:16,fontWeight:700,color:poupCobre20?P.accent:P.orange}}>{poupCobre20?"✓ Sim":"✗ Não"}</div><div style={{fontSize:10,color:P.textDim}}>{poupCobre20?`Saldo após entrada: ${fmt(saldoPosEntrada)}`:`Falta ${fmt(entradaCaixa-poupTotal)}`}</div></div>
+            {poupCobre20&&saldoPosEntrada>0&&<div style={{background:mesesParaQuitar<prazoFinMeses?P.accentGlow:P.orangeDim,border:`1px solid ${mesesParaQuitar<prazoFinMeses?P.accent:P.orange}44`,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:P.textMuted,marginBottom:4}}>Quitação antecipada</div><div style={{fontSize:16,fontWeight:700,color:mesesParaQuitar<prazoFinMeses?P.accent:P.orange}}>{mesesParaQuitar<prazoFinMeses?`Ano ${Math.ceil(mesesParaQuitar/12)}`:"Não quita"}</div><div style={{fontSize:10,color:P.textDim}}>{mesesParaQuitar<prazoFinMeses?`${mesesParaQuitar} meses · rend. ${rendM}%/mês`:"Saldo insuficiente"}</div></div>}
           </div>
           {imovelAtual>0&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
             <div style={{background:P.surfaceAlt,border:`1px solid ${saldoVenda>=0?P.accent:P.orange}44`,borderRadius:10,padding:"16px 18px"}}>
@@ -1764,11 +1776,18 @@ function ImoveisTab({sim,setSim,defSim}){const P=useT();const S=useS();
             <div style={{background:P.surfaceAlt,border:`1px solid ${P.blue}44`,borderRadius:10,padding:"16px 18px"}}>
               <div style={{fontSize:12,fontWeight:700,color:P.textDim,marginBottom:10}}>🏠 Opção 2: Manter imóvel + Financiar pela Caixa</div>
               <div style={{fontSize:11,display:"grid",gap:5}}>
-                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:P.textMuted}}>Entrada (20%)</span><b>{fmt(entradaCaixa)}</b></div>
-                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:P.textMuted}}>Poupança disponível</span><b style={{color:poupCobre20?P.accent:P.orange}}>{fmt(poupTotal)}</b></div>
+                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:P.textMuted}}>Poupança total</span><b>{fmt(poupTotal)}</b></div>
+                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:P.textMuted}}>- Entrada (20%)</span><b style={{color:P.orange}}>- {fmt(entradaCaixa)}</b></div>
+                <div style={{display:"flex",justifyContent:"space-between",borderTop:`1px solid ${P.border}`,paddingTop:5,marginTop:2}}><span style={{color:P.textMuted}}>Saldo após entrada</span><b style={{color:poupCobre20?P.accent:P.red}}>{fmt(saldoPosEntrada)}</b></div>
                 <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:P.textMuted}}>Parcela mensal</span><b style={{color:P.red}}>{fmt(parcelaCaixa)}</b></div>
+                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:P.textMuted}}>Parcelas quitadas (sem rend.)</span><b>{parcelasQuitadas} meses</b></div>
+                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:P.textMuted}}>Quitação total (com rend. {rendM}%)</span><b style={{color:mesesParaQuitar<prazoFinMeses?P.accent:P.orange}}>{mesesParaQuitar<prazoFinMeses?mesesParaQuitar+"m ("+Math.round(mesesParaQuitar/12*10)/10+"a)":"Não quita"}</b></div>
                 <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:P.textMuted}}>Mantém imóvel atual</span><b style={{color:P.yellow}}>{fmt(imovelFuturo)}</b></div>
-                <div style={{fontSize:11,fontWeight:600,color:P.blue,marginTop:4,textAlign:"center"}}>{poupCobre20?"✓ Entrada coberta pela poupança":"⚠ Poupança insuficiente para entrada"}</div>
+                <div style={{marginTop:6,padding:"8px 10px",borderRadius:6,background:poupSustentaFin?P.accentGlow:mesesParaQuitar<prazoFinMeses?P.blueDim:P.orangeDim}}>
+                  {poupSustentaFin?<div style={{fontSize:11,fontWeight:700,color:P.accent}}>✓ Rendimento da poupança ({fmt(rendMensalSaldo)}/mês) cobre a parcela indefinidamente!</div>
+                  :mesesParaQuitar<prazoFinMeses?<div style={{fontSize:11,fontWeight:700,color:P.blue}}>✓ Quitação antecipada em {Math.ceil(mesesParaQuitar/12)} anos</div>
+                  :<div style={{fontSize:11,fontWeight:700,color:P.orange}}>⚠ Poupança {poupCobre20?"insuficiente para quitar":"insuficiente para a entrada"}</div>}
+                </div>
               </div>
             </div>
           </div>)}

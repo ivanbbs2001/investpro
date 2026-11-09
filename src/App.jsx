@@ -340,6 +340,29 @@ const orcModelosFixos=(data,mes,mesAtual,novoId)=>{
   const seen=new Set();
   return data.filter(i=>i.data&&i.data.startsWith(prevM)&&i.fixo&&i.tipo!=="Receita"&&!seen.has(i.categoria)&&seen.add(i.categoria)).map(i=>({...i,id:novoId(),data:mes+"-01",valor:"",descricao:""}));
 };
+/* Orçamento: lançamento "em branco" = linha-modelo dos gastos fixos (valor vazio). Não conta como gasto. */
+const orcEmBranco=i=>i.valor===""||i.valor==null;
+/* Remove a linha-modelo de uma categoria quando o mês já tem lançamento REAL (valor > 0) dela. Os lançamentos reais da
+   categoria ficam marcados como fixos, para o mês seguinte voltar a trazer o modelo. Devolve a MESMA lista se nada mudou. */
+const orcLimparModelos=data=>{
+  const chave=i=>(i.data||"").slice(0,7)+"|"+(i.categoria||"");
+  const real=i=>i.tipo!=="Receita"&&i.data&&!orcEmBranco(i)&&Number(i.valor)>0;
+  const reais=new Set(data.filter(real).map(chave));
+  const fixos=new Set();let mudou=false;
+  const sem=data.filter(i=>{if(i.tipo!=="Receita"&&i.data&&orcEmBranco(i)&&reais.has(chave(i))){mudou=true;if(i.fixo)fixos.add(chave(i));return false;}return true;});
+  if(!mudou)return data;
+  return sem.map(i=>(real(i)&&!i.fixo&&fixos.has(chave(i)))?{...i,fixo:true}:i);
+};
+/* Orçamento: já existe lançamento real da mesma categoria no mês? (linhas em branco não contam) */
+const orcDupCategoria=(data,out,mes)=>data.find(x=>x.tipo!=="Receita"&&x.categoria===out.categoria&&x.data&&x.data.startsWith(mes)&&x.id!==out.id&&!orcEmBranco(x));
+/* Tesouro Direto: registros do CSV que ainda não existem. Um aporte por mês: mesmo mês + mesmo valor = já lançado (qualquer dia). */
+const tdNovos=(existentes,items)=>items.filter(n=>!existentes.some(x=>(x.data||"").slice(0,7)===n.data.slice(0,7)&&Math.abs((Number(x.valor)||0)-Number(n.valor))<0.01));
+/* Tesouro Direto: título e estimativa de cada carteira */
+const TD_INFO={
+  apos:{nome:"Aposentadoria",titulo:"Renda+ 2045 · IPCA + 5,71% a.a.",estimativa:"Estimativa para janeiro de 2045: receber cerca de R$ 2.990 por mês durante 20 anos"},
+  liza:{nome:"Faculdade Liza",titulo:"Educa+ 2042 · IPCA + 7,05% a.a.",estimativa:"Estimativa para janeiro de 2042: receber cerca de R$ 2.000 por mês durante 5 anos"}
+};
+
 /* PDF: agrupa os itens de texto de UMA página em linhas (de cima p/ baixo) e células (da esquerda p/ direita) */
 const pdfAgruparLinhas=items=>{
   const its=items.filter(i=>i.str&&i.str.trim()).map(i=>({x:i.x,y:i.y,str:i.str.trim()})).sort((a,b)=>b.y-a.y);
@@ -639,6 +662,8 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
     const novos=orcModelosFixos(data,mF,localISO(new Date()).slice(0,7),uid);   // nunca cria linhas em meses futuros
     if(novos.length)setData(prev=>[...prev,...novos]);
   },[mF]);
+  // Lançou o gasto real de uma categoria fixa? A linha em branco daquele mês some sozinha (também ao importar fatura/extrato)
+  useEffect(()=>{setData(prev=>orcLimparModelos(prev));},[data]);
   // Credit card import state
   const[showImport,setShowImport]=useState(false);const[importItems,setImportItems]=useState([]);
   const[catMap,setCatMap]=useState(()=>ld("ip8-catMap",{}));
@@ -780,7 +805,7 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
   const rec=fl.filter(i=>i.tipo==="Receita").reduce((a,i)=>a+(Number(i.valor)||0),0);
   const desp=fl.filter(i=>i.tipo!=="Receita").reduce((a,i)=>a+(Number(i.valor)||0),0);
   const sal=rec-desp;
-  const bC={};fl.filter(i=>i.tipo!=="Receita").forEach(i=>{bC[i.categoria||"Outros"]=(bC[i.categoria||"Outros"]||0)+(Number(i.valor)||0);});const cS=Object.entries(bC).sort((a,b)=>b[1]-a[1]);
+  const bC={};fl.filter(i=>i.tipo!=="Receita").forEach(i=>{bC[i.categoria||"Outros"]=(bC[i.categoria||"Outros"]||0)+(Number(i.valor)||0);});const cS=Object.entries(bC).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
   const despFixo=fl.filter(i=>i.tipo!=="Receita"&&i.fixo).reduce((a,i)=>a+(Number(i.valor)||0),0);
   const despVar=desp-despFixo;
   const sF=orcDoS(fl);
@@ -796,7 +821,7 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
     // Check duplicate category in same month
     if(!out.id||!data.find(x=>x.id===out.id)){
       const month=out.data?out.data.slice(0,7):"";
-      const dup=data.find(x=>x.tipo!=="Receita"&&x.categoria===out.categoria&&x.data&&x.data.startsWith(month)&&x.id!==out.id);
+      const dup=orcDupCategoria(data,out,month);
       if(dup&&out.tipo!=="Receita"){if(!confirm(`Já existe "${out.categoria}" em ${mL(month)}. Adicionar mesmo assim?`))return;}
     }
     setData(prev=>{const idx=prev.findIndex(x=>x.id===out.id);if(idx>=0){const n=[...prev];n[idx]=out;return n;}return[...prev,out];});
@@ -1579,13 +1604,18 @@ function TDTab({apos,setApos,liza,setLiza}){const P=useT();const S=useS();const[
   const handleCSV=e=>{const file=e.target.files[0];if(!file)return;const reader=new FileReader();
     reader.onload=ev=>{const items=tdParseText(ev.target.result);
       if(items.length===0){alert("Nenhum registro reconhecido. O arquivo precisa ter colunas de Data (dd/mm/aaaa) e Valor (R$).");return;}
-      setActive(p=>{const novos=items.filter(n=>!p.some(x=>x.data===n.data&&Math.abs((Number(x.valor)||0)-Number(n.valor))<0.01));
-        setTimeout(()=>alert(`${novos.length} importados · ${items.length-novos.length} ignorados (já existiam)`),0);return[...p,...novos];});
+      const novos=tdNovos(activeData,items);
+      if(novos.length)setActive(p=>[...p,...novos]);
+      alert(`${novos.length} importados · ${items.length-novos.length} ignorados (já existiam)`);
     };reader.readAsText(file,"UTF-8");e.target.value="";
   };
   return(<div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28,flexWrap:"wrap",gap:8}}>
-      <div style={{fontSize:22,fontWeight:700}}>Tesouro Direto</div>
+      <div>
+        <div style={{fontSize:22,fontWeight:700}}>Tesouro Direto — {TD_INFO[sub].nome}</div>
+        <div style={{fontSize:13,fontWeight:600,color:P.accent,marginTop:4}}>{TD_INFO[sub].titulo}</div>
+        <div style={{fontSize:12,color:P.textDim,marginTop:2}}>{TD_INFO[sub].estimativa}</div>
+      </div>
       <div style={{display:"flex",gap:8}}>
         <button style={sub==="apos"?S.btnA():S.btnO} onClick={()=>setSub("apos")}>Aposentadoria</button>
         <button style={sub==="liza"?S.btnA():S.btnO} onClick={()=>setSub("liza")}>Faculdade Liza</button>
@@ -2084,7 +2114,7 @@ function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc}){const P=useT();const S=useS
   const despMes=orcMes.filter(i=>i.tipo!=="Receita").reduce((a,i)=>a+(Number(i.valor)||0),0);
   const saldoMes=recMes-despMes;
   const byCat={};orcMes.filter(i=>i.tipo!=="Receita").forEach(i=>{byCat[i.categoria||"Outros"]=(byCat[i.categoria||"Outros"]||0)+(Number(i.valor)||0);});
-  const catSorted=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+  const catSorted=Object.entries(byCat).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
   const gastosFixos=orcMes.filter(i=>i.tipo!=="Receita"&&i.fixo).reduce((a,i)=>a+(Number(i.valor)||0),0);
   const cobertura=gastosFixos>0?((tRM/gastosFixos)*100):0;
   const cobPct=recMes>0?Math.min(100,Math.round((despMes/recMes)*100)):0;

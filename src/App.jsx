@@ -1541,6 +1541,16 @@ function PrfTab({prfRef,sim,setSim,defSim}){const P=useT();const S=useS();const[
   </div>);
 }
 
+/* Tesouro Direto: parser de CSV/colagem (acha Data e Valor pelo conteúdo, em qualquer ordem de colunas) */
+const tdParseLine=(line)=>{const sep=line.includes("\t")?"\t":line.includes(";")?";":",";const r=[];let cur="",q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"')q=!q;else if(c===sep&&!q){r.push(cur.trim());cur="";}else cur+=c;}r.push(cur.trim());return r;};
+const tdISODate=s=>{s=(s||"").trim();let m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);if(m)return`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(m)return`${m[1]}-${m[2]}-${m[3]}`;return null;};
+const tdMoney=s=>{s=(s||"").replace(/R\$|\s/g,"");if(!/^-?\d[\d.,]*$/.test(s))return null;if(s.includes(","))s=s.replace(/\./g,"").replace(",",".");else if((s.match(/\./g)||[]).length>1)s=s.replace(/\./g,"");const v=Math.abs(Number(s));return isFinite(v)&&v>0?v:null;};
+const tdParseText=text=>{const items=[];text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).forEach(line=>{
+  const cells=tdParseLine(line);const di=cells.findIndex(c=>tdISODate(c));if(di<0)return;
+  const dt=tdISODate(cells[di]);let val=null;
+  for(let i=cells.length-1;i>=0;i--){if(i===di)continue;const c=cells[i];if(/^\d+$/.test(c.replace(/\s/g,""))&&!/R\$/.test(c))continue;const v=tdMoney(c);if(v){val=v;break;}}
+  if(val)items.push({id:uid(),data:dt,valor:val.toFixed(2)});});return items;};
+
 /* TESOURO DIRETO TAB */
 function TDTab({apos,setApos,liza,setLiza}){const P=useT();const S=useS();const[sub,setSub]=useState("apos");const[modal,setModal]=useState(null);const[del,setDel]=useState(null);
   const activeData=sub==="apos"?apos:liza;const setActive=sub==="apos"?setApos:setLiza;
@@ -1548,16 +1558,11 @@ function TDTab({apos,setApos,liza,setLiza}){const P=useT();const S=useS();const[
   const sorted=[...activeData].sort((a,b)=>(a.data||"").localeCompare(b.data||""));
   const doSave=item=>{const out={...item,id:item.id||uid()};setActive(p=>{const i=p.findIndex(x=>x.id===out.id);if(i>=0){const n=[...p];n[i]=out;return n;}return[...p,out];});setModal(null);};
   const handleCSV=e=>{const file=e.target.files[0];if(!file)return;const reader=new FileReader();
-    reader.onload=ev=>{const lines=ev.target.result.split("\n").filter(l=>l.trim());const items=[];
-      lines.forEach((line,idx)=>{if(idx===0&&line.toLowerCase().includes("data"))return;
-        const parts=line.split(/[;,\t]/);if(parts.length>=2){
-          let dt=parts[0].trim(),val=parts[1].trim().replace(/[^\d.,-]/g,"").replace(",",".");
-          const dm=dt.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);if(dm)dt=`${dm[3]}-${dm[2]}-${dm[1]}`;
-          const v=Math.abs(Number(val));if(v>0)items.push({id:uid(),data:dt,valor:v.toFixed(2)});
-        }
-      });
-      if(items.length>0){setActive(p=>[...p,...items]);alert(`${items.length} registros importados`);}
-    };reader.readAsText(file);e.target.value="";
+    reader.onload=ev=>{const items=tdParseText(ev.target.result);
+      if(items.length===0){alert("Nenhum registro reconhecido. O arquivo precisa ter colunas de Data (dd/mm/aaaa) e Valor (R$).");return;}
+      setActive(p=>{const novos=items.filter(n=>!p.some(x=>x.data===n.data&&Math.abs((Number(x.valor)||0)-Number(n.valor))<0.01));
+        setTimeout(()=>alert(`${novos.length} importados · ${items.length-novos.length} ignorados (já existiam)`),0);return[...p,...novos];});
+    };reader.readAsText(file,"UTF-8");e.target.value="";
   };
   return(<div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28,flexWrap:"wrap",gap:8}}>

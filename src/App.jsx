@@ -317,7 +317,66 @@ function IndTab({data,setData,prfRef,setPrfRef}){const P=useT();const S=useS();c
   </div>);}
 
 function useSort(defField,defDir){const[sb,setSb]=useState(defField||null);const[sd,setSd]=useState(defDir||"asc");const onS=f=>{if(sb===f)setSd(d=>d==="asc"?"desc":"asc");else{setSb(f);setSd("asc");}};const doS=arr=>{if(!sb)return arr;return[...arr].sort((a,b)=>{let va=a[sb],vb=b[sb];if(va==null)va="";if(vb==null)vb="";const na=Number(va),nb=Number(vb);if(!isNaN(na)&&!isNaN(nb))return sd==="asc"?na-nb:nb-na;return sd==="asc"?String(va).localeCompare(String(vb)):String(vb).localeCompare(String(va));});};return{sb,sd,onS,doS};}
-function VencSec({title,items,P}){if(!items.length)return null;const[open,setOpen]=useState(false);const total=items.reduce((a,i)=>a+(Number(i.valor)||0),0);const S=useS();return(<div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:700,color:title.includes("30d")?P.red:title.includes("180")?P.yellow:P.accent,marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:8}} onClick={()=>setOpen(!open)}><span style={{fontSize:14}}>{open?"▼":"▶"}</span>{title} ({items.length}) — Total: {fmt(total)}</div>{open&&<div style={{display:"flex",gap:8,flexWrap:"wrap",paddingLeft:22}}>{items.map(i=>(<div key={i.id} style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:6,padding:"8px 12px",fontSize:11}}><b>{i.tipo||i.incorporadora||""}</b> {i.emissor||i.empreendimento||""} — {fmt(i.valor)} — {fD(i.dataVencimento)} ({diasV(i.dataVencimento)}d)</div>))}</div>}</div>);}
+/* ===== Utilitários (calendário puro: independem do fuso horário do navegador) ===== */
+const ymdToUTC=v=>{if(typeof v==="number")return v;const m=String(v||"").match(/^(\d{4})-(\d{2})-(\d{2})/);return m?Date.UTC(+m[1],+m[2]-1,+m[3]):NaN;};
+const localISO=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+/* PRF: dias úteis (seg-sex) entre duas datas YYYY-MM-DD, inclusive */
+const prfNetworkDays=(start,end)=>{const a=ymdToUTC(start),b=ymdToUTC(end);if(isNaN(a)||isNaN(b))return 0;let c=0;for(let t=a;t<=b;t+=864e5){const w=new Date(t).getUTCDay();if(w!==0&&w!==6)c++;}return c;};
+const prfMonthBounds=ymd=>{const t=ymdToUTC(ymd);if(isNaN(t))return null;const d=new Date(t),y=d.getUTCFullYear(),m=d.getUTCMonth();return{first:Date.UTC(y,m,1),last:Date.UTC(y,m+1,0)};};
+/* Orçamento: aviso de atualização. Só conta gasto real (valor > 0, até hoje, últimos 15 dias); linhas-modelo dos fixos (valor vazio) não contam */
+const orcFrescor=(data,agora=new Date())=>{
+  if(!data.length)return null;
+  const hoje=localISO(agora),q15=localISO(new Date(agora.getFullYear(),agora.getMonth(),agora.getDate()-15));
+  const rec=data.filter(i=>i.tipo!=="Receita"&&Number(i.valor)>0&&i.data>=q15&&i.data<=hoje);
+  if(rec.length===0)return{ok:false};
+  const last=rec.reduce((a,b)=>b.data>a.data?b:a).data;
+  return{ok:true,last,dias:Math.round((ymdToUTC(hoje)-ymdToUTC(last))/864e5)};
+};
+/* Orçamento: linhas-modelo (categoria dos gastos fixos, sem valor) para um mês vazio; nunca para meses futuros */
+const orcModelosFixos=(data,mes,mesAtual,novoId)=>{
+  if(mes>mesAtual)return[];
+  if(data.some(i=>i.data&&i.data.startsWith(mes)))return[];
+  const[y,m]=mes.split("-").map(Number);const p=new Date(y,m-2,1);const prevM=`${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,"0")}`;
+  const seen=new Set();
+  return data.filter(i=>i.data&&i.data.startsWith(prevM)&&i.fixo&&i.tipo!=="Receita"&&!seen.has(i.categoria)&&seen.add(i.categoria)).map(i=>({...i,id:novoId(),data:mes+"-01",valor:"",descricao:""}));
+};
+/* PDF: agrupa os itens de texto de UMA página em linhas (de cima p/ baixo) e células (da esquerda p/ direita) */
+const pdfAgruparLinhas=items=>{
+  const its=items.filter(i=>i.str&&i.str.trim()).map(i=>({x:i.x,y:i.y,str:i.str.trim()})).sort((a,b)=>b.y-a.y);
+  const linhas=[];let cur=null,curY=null;
+  its.forEach(i=>{if(cur===null||Math.abs(i.y-curY)>3){cur=[];linhas.push(cur);curY=i.y;}cur.push(i);});
+  return linhas.map(l=>l.sort((a,b)=>a.x-b.x).map(i=>i.str));
+};
+/* Lê o PDF página a página (ordem das páginas preservada); devolve as linhas como arrays de células */
+const pdfLerLinhas=async(file,loadLib)=>{
+  const lib=await loadLib();const pdf=await lib.getDocument({data:await file.arrayBuffer()}).promise;const out=[];
+  for(let pg=1;pg<=pdf.numPages;pg++){const page=await pdf.getPage(pg);const c=await page.getTextContent();
+    pdfAgruparLinhas(c.items.map(it=>({x:it.transform[4],y:it.transform[5],str:it.str}))).forEach(l=>out.push(l));}
+  return out;
+};
+/* Extrato bancário em PDF (Data/Doc | Histórico | Descrição | Débito | Crédito | Saldo).
+   Débito x crédito é decidido pelo SALDO (só entra se o saldo caiu), pois a coluna vazia some na extração. */
+const extratoPdfRows=(linhas,ignorar=[])=>{
+  const dinheiro=c=>{const m=String(c).match(/^R\$\s*(\d{1,3}(?:\.\d{3})+|\d+),(\d{2})$/);return m?Number(m[1].replace(/\./g,"")+"."+m[2]):null;};
+  let prev=null;const rows=[];
+  linhas.forEach(cells=>{
+    const sa=cells.join(" ").match(/Saldo Anterior:?\s*(R\$\s*[\d.]+,\d{2})/i);
+    if(sa){prev=dinheiro(sa[1]);return;}
+    const dm=(cells[0]||"").match(/^(\d{2})\/(\d{2})\/(\d{4})/);if(!dm)return;
+    const vals=cells.slice(1).filter(c=>dinheiro(c)!==null).map(dinheiro);
+    if(vals.length<2)return;
+    const saldo=vals[vals.length-1],mov=vals[vals.length-2];
+    const debito=prev===null?true:saldo<prev-0.004;
+    prev=saldo;
+    if(!debito||mov<=0)return;
+    const historico=cells[1]||"",desc=(cells[2]||"").trim();
+    if(desc.length<2||ignorar.some(ig=>desc.toUpperCase().includes(ig)))return;
+    rows.push({dt:`${dm[3]}-${dm[2]}-${dm[1]}`,historico,desc,val:mov.toFixed(2)});
+  });
+  return rows;
+};
+
+function VencSec({title,items,P}){const[open,setOpen]=useState(false);const S=useS();if(!items.length)return null;const total=items.reduce((a,i)=>a+(Number(i.valor)||0),0);return(<div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:700,color:title.includes("30d")?P.red:title.includes("180")?P.yellow:P.accent,marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:8}} onClick={()=>setOpen(!open)}><span style={{fontSize:14}}>{open?"▼":"▶"}</span>{title} ({items.length}) — Total: {fmt(total)}</div>{open&&<div style={{display:"flex",gap:8,flexWrap:"wrap",paddingLeft:22}}>{items.map(i=>(<div key={i.id} style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:6,padding:"8px 12px",fontSize:11}}><b>{i.tipo||i.incorporadora||""}</b> {i.emissor||i.empreendimento||""} — {fmt(i.valor)} — {fD(i.dataVencimento)} ({diasV(i.dataVencimento)}d)</div>))}</div>}</div>);}
 
 /* ═══ RF — columns reordered: ...Valor, Rend.Anual, Rend.Líq, Rend.Mensal, IR%, ... + 3 pie charts ═══ */
 const RF_FIELDS=[{key:"dataInicio",label:"Data Início",type:"date"},{key:"dataVencimento",label:"Vencimento",type:"date"},{key:"tipo",label:"Tipo",type:"select",options:["CDB","CRA","CRI","LCI","LCA","Debênture","Tesouro Selic","Tesouro IPCA+","Tesouro Prefixado","LC","Outro"]},{key:"indexador",label:"Indexador",type:"select",options:["Pré","CDI","IPCA","Selic","IGPM","Outro"]},{key:"taxa",label:"Taxa (%)",type:"number",step:"0.01"},{key:"valor",label:"Valor",type:"number",step:"0.01"},{key:"rendAnual",label:"Rend.Anual",readOnly:true},{key:"rendMensal",label:"Rend.Mensal",readOnly:true},{key:"emissor",label:"Emissor"},{key:"banco",label:"Banco",type:"select",useBanks:true}];
@@ -577,17 +636,8 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
   // 7. Auto-copy fixed expenses from previous month if current month is empty
   // Copies category name only — value is reset to 0 for user to fill in
   useEffect(()=>{
-    const thisM=mF;const fl2=data.filter(i=>i.data&&i.data.startsWith(thisM));
-    if(fl2.length===0){
-      const[y,m]=thisM.split("-").map(Number);const prev=new Date(y,m-2,1);const prevM=`${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,"0")}`;
-      const fixedPrev=data.filter(i=>i.data&&i.data.startsWith(prevM)&&i.fixo&&i.tipo!=="Receita");
-      // Deduplicate by category (one placeholder per category)
-      const seen=new Set();const unique=fixedPrev.filter(i=>{if(seen.has(i.categoria))return false;seen.add(i.categoria);return true;});
-      if(unique.length>0){
-        const copied=unique.map(i=>({...i,id:uid(),data:thisM+"-01",valor:"",descricao:""}));
-        setData(prev=>[...prev,...copied]);
-      }
-    }
+    const novos=orcModelosFixos(data,mF,localISO(new Date()).slice(0,7),uid);   // nunca cria linhas em meses futuros
+    if(novos.length)setData(prev=>[...prev,...novos]);
   },[mF]);
   // Credit card import state
   const[showImport,setShowImport]=useState(false);const[importItems,setImportItems]=useState([]);
@@ -611,51 +661,13 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
   };
   const loadPdfJs=()=>new Promise((res,rej)=>{if(window.pdfjsLib)return res(window.pdfjsLib);const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";s.onload=()=>{window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";res(window.pdfjsLib);};s.onerror=rej;document.head.appendChild(s);});
   // PDF to CSV converter
+  const extractPdfText=async(file)=>(await pdfLerLinhas(file,loadPdfJs)).map(c=>c.join(" ")).join("\n");
   const[showPdfCsv,setShowPdfCsv]=useState(false);const[pdfCsvRows,setPdfCsvRows]=useState([]);const[pdfCsvLoading,setPdfCsvLoading]=useState(false);
   const handlePdfToCsv=async(e)=>{const file=e.target.files[0];if(!file)return;setPdfCsvLoading(true);
     try{
-      const pdfjsLib=await loadPdfJs();
-      const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;
-      const allItems=[];
-      for(let pg=1;pg<=pdf.numPages;pg++){const page=await pdf.getPage(pg);const content=await page.getTextContent();
-        content.items.forEach(item=>{if(item.str.trim())allItems.push({y:item.transform[5],x:item.transform[4],str:item.str.trim()});});
-      }
-      // Group into rows by Y (tolerance 3px)
-      allItems.sort((a,b)=>b.y-a.y);
-      const lineGroups=[];let curY=null,curGroup=[];
-      allItems.forEach(item=>{if(curY===null||Math.abs(item.y-curY)>3){if(curGroup.length)lineGroups.push([...curGroup]);curGroup=[];curY=item.y;}curGroup.push(item);});
-      if(curGroup.length)lineGroups.push(curGroup);
-      // Reconstruct lines as pipe-separated (PDF.js extracts columns as separate items)
-      const rawLines=lineGroups.map(g=>g.sort((a,b)=>a.x-b.x).map(i=>i.str).join(" | "));
-      setPdfRawText(rawLines.join("\n"));
-      const rows=[];
-      // Format: "18/05/2026 38372267 | Pagamento Pix | SHPP BRASIL INSTITUI | R$ 45,78 | R$ 5.285,71"
-      // Or:     "08/06/2026 Unimed jun | Liq. Eletrônica IB | ASPRF PR | R$ 1.676,01 | R$ 5.509,47"
-      rawLines.forEach(line=>{
-        // Must start with a date
-        const dateM=line.match(/^(\d{2})\/(\d{2})\/(\d{4})/);if(!dateM)return;
-        const dt=`${dateM[3]}-${dateM[2]}-${dateM[1]}`;
-        const parts=line.split("|").map(p=>p.trim()).filter(p=>p);
-        if(parts.length<3)return;
-        // parts[0] = "18/05/2026 38372267"  (date + docnum)
-        // parts[1] = "Pagamento Pix" or "Débito Pix" or "Liq. Eletrônica IB" or "Ted"
-        // parts[2] = description (beneficiary name)
-        // parts[3] = R$ debit amount
-        // parts[4] = R$ saldo
-        const historico=parts[1]||"";
-        const desc=parts[2]||"";
-        // Find debit value - first R$ XX,XX that is NOT the saldo
-        const moneyRe=/R\$\s*([\d.]+,\d{2})/;
-        const debitPart=parts[3]||"";const debitM=debitPart.match(moneyRe);
-        if(!debitM)return;
-        const val=Number(debitM[1].replace(/\./g,"").replace(",","."))||0;
-        if(val<=0)return;
-        const dUp=desc.toUpperCase();
-        // Skip self-transfers and ignored entries
-        if(IGNORE_EXTRATO.some(ig=>dUp.includes(ig)))return;
-        if(!desc||desc.length<2)return;
-        rows.push({dt,historico:historico.trim(),desc:desc.trim(),val:val.toFixed(2),include:true,categoria:catMap[dUp]||guessCategory(desc.trim())});
-      });
+      const linhas=await pdfLerLinhas(file,loadPdfJs);
+      setPdfRawText(linhas.map(c=>c.join(" | ")).join("\n"));
+      const rows=extratoPdfRows(linhas,IGNORE_EXTRATO).map(r=>({...r,include:true,categoria:catMap[r.desc.toUpperCase()]||guessCategory(r.desc)}));
       setPdfCsvRows(rows);setShowPdfCsv(true);
     }catch(err){alert("Erro ao ler PDF: "+err.message);}
     setPdfCsvLoading(false);e.target.value="";
@@ -736,7 +748,8 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
     setImportItems(processImportItems(items));if(items.length>0)setShowImport(true);}catch(err){alert("Erro ao ler arquivo: "+err.message);}e.target.value="";
   };
   const handleExtrato=async(e)=>{const file=e.target.files[0];if(!file)return;
-    try{let text="";if(file.name.toLowerCase().endsWith(".pdf")){text=await extractPdfText(file);}else{text=typeof file.text==="function"?await file.text():await readFileText(file);}
+    if(file.name.toLowerCase().endsWith(".pdf"))return handlePdfToCsv(e);   // extrato em PDF: mesma tela de revisão do botão PDF→Extrato
+    try{let text=typeof file.text==="function"?await file.text():await readFileText(file);
     const items=parseTextToItems(text,file.name.toLowerCase(),true);
     if(items.length===0){alert("Nenhum item encontrado. Verifique o formato do arquivo.");}
     setImportItems(processImportItems(items));if(items.length>0)setShowImport(true);}catch(err){alert("Erro ao ler arquivo: "+err.message);}e.target.value="";
@@ -848,12 +861,9 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
     </div></div>)}
 
     {(()=>{
-      const quinze=new Date();quinze.setDate(quinze.getDate()-15);const q15=quinze.toISOString().slice(0,10);
-      const recent=data.filter(i=>i.data>=q15&&i.tipo!=="Receita");
-      if(data.length===0)return null;
-      if(recent.length===0){return(<div style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.4)",borderRadius:8,padding:"10px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:18}}>⚠️</span><div><div style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>Gastos desatualizados</div><div style={{fontSize:11,color:"#dc2626",opacity:0.8}}>Nenhum gasto nos últimos 15 dias. Atualize via <b>📎 Fatura Cartão</b> ou <b>🏦 Extrato Banco</b>.</div></div></div>);}
-      const last=recent.sort((a,b)=>b.data.localeCompare(a.data))[0];const diasAtras=Math.floor((new Date()-new Date(last.data+"T00:00:00"))/864e5);
-      return(<div style={{background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.35)",borderRadius:8,padding:"10px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:18}}>✅</span><div><div style={{fontSize:12,fontWeight:700,color:"#16a34a"}}>Gastos atualizados</div><div style={{fontSize:11,color:"#16a34a",opacity:0.8}}>Último lançamento há {diasAtras===0?"hoje":diasAtras===1?"1 dia":`${diasAtras} dias`} ({fD(last.data)}).</div></div></div>);
+      const f=orcFrescor(data);if(!f)return null;
+      if(!f.ok){return(<div style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.4)",borderRadius:8,padding:"10px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:18}}>⚠️</span><div><div style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>Gastos desatualizados</div><div style={{fontSize:11,color:"#dc2626",opacity:0.8}}>Nenhum gasto nos últimos 15 dias. Atualize via <b>📎 Fatura Cartão</b> ou <b>🏦 Extrato Banco</b>.</div></div></div>);}
+      return(<div style={{background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.35)",borderRadius:8,padding:"10px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:18}}>✅</span><div><div style={{fontSize:12,fontWeight:700,color:"#16a34a"}}>Gastos atualizados</div><div style={{fontSize:11,color:"#16a34a",opacity:0.8}}>Último lançamento há {f.dias===0?"hoje":f.dias===1?"1 dia":`${f.dias} dias`} ({fD(f.last)}).</div></div></div>);
     })()}
     {sub==="relatorio"?(<div>
       <div style={S.card}>
@@ -1424,21 +1434,16 @@ function PrfTab({prfRef,sim,setSim,defSim}){const P=useT();const S=useS();const[
   const apNasc=sim?.apNasc??"";const setApNasc=v=>sf("apNasc",v);
   const apEntrada=sim?.apEntrada??"";const setApEntrada=v=>sf("apEntrada",v);
   const apFator=sim?.apFator??"1.0";const setApFator=v=>sf("apFator",v);
-  // NETWORKDAYS helper (count weekdays between two dates)
-  const networkDays=(start,end)=>{if(!start||!end)return 0;let d=new Date(start),e=new Date(end),count=0;while(d<=e){const dow=d.getDay();if(dow!==0&&dow!==6)count++;d.setDate(d.getDate()+1);}return count;};
-  // EOMONTH helper
-  const eoMonth=(dt,offset)=>{const d=new Date(dt);d.setMonth(d.getMonth()+1+offset);d.setDate(0);return d;};
+  // Dias úteis / limites do mês por calendário puro (sem depender do fuso do navegador)
+  const networkDays=prfNetworkDays;
   const dDias=(()=>{if(!dIni||!dFim)return 0;const d=Math.max(0,Math.floor((new Date(dFim)-new Date(dIni))/(864e5)));return d>0?d+0.5:0;})();
   const dValor=dTipo==="Capitais"?(ref.diariaCapitais||380):dTipo==="Interior"?(ref.diariaInterior||335):(ref.diariaSPRJ||425);
   const dTotal=dDias*dValor;
   // Desc Alimentação: (1175/NETWORKDAYS(EOMONTH(dIni,-1)+1, EOMONTH(dIni,0))) * NETWORKDAYS(dIni,dFim)
   const dDescAlim=(()=>{if(!dIni||!dFim)return 0;
-    const eoMonthPrev=eoMonth(dIni,-1);const firstOfMonth=new Date(eoMonthPrev);firstOfMonth.setDate(firstOfMonth.getDate()+1);
-    const eoMonthCur=eoMonth(dIni,0);
-    const wdMonth=networkDays(firstOfMonth,eoMonthCur);
-    if(wdMonth<=0)return 0;
-    const wdTrip=networkDays(new Date(dIni),new Date(dFim));
-    return(1175/wdMonth)*wdTrip;
+    const mb=prfMonthBounds(dIni);if(!mb)return 0;
+    const wdMonth=prfNetworkDays(mb.first,mb.last);if(wdMonth<=0)return 0;
+    return(1175/wdMonth)*prfNetworkDays(dIni,dFim);
   })();
   const dLiquido=dTotal-dDescAlim;
   const dHotelNum=Number(dHotel)||0;const dLimpezaNum=Number(dLimpeza)||0;

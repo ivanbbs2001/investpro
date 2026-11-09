@@ -11,7 +11,7 @@ const TABS_I=[{id:"rf",l:"Renda Fixa",ic:"▤"},{id:"inco",l:"INCO",ic:"⌂"},{i
 const TABS_G=[{id:"orc",l:"Orçamento",ic:"☰"},{id:"irpf",l:"IRPF",ic:"📋"},{id:"prf",l:"PRF",ic:"📊"},{id:"imoveis",l:"Imóveis",ic:"🏠"}];
 const TABS_S=[{id:"ind",l:"Índices",ic:"≡"},{id:"cfg",l:"Config",ic:"⚙"}];
 const ALL_T=[...TABS_M,...TABS_I,...TABS_G,...TABS_S];
-const SK={rf:"ip8-rf",ac:"ip8-ac",etf:"ip8-etf",fii:"ip8-fii",cr:"ip8-cr",ind:"ip8-ind",indLF:"ip8-indLF",ap:"ip8-ap",orc:"ip8-orc",inco:"ip8-inco",banks:"ip8-banks",theme:"ip8-theme",apMeta:"ip8-apMeta",fiiMkt:"ip8-fiiMkt",rates:"ip8-rates",evo:"ip8-evo",cryptoQ:"ip8-cryptoQ",cotCr:"ip8-cotCr",crBase:"ip8-crBase",prfRef:"ip8-prfRef",tdApos:"ip8-tdApos",tdLiza:"ip8-tdLiza",simImo:"ip8-simImo",simProj:"ip8-simProj",simPrf:"ip8-simPrf"};
+const SK={rf:"ip8-rf",ac:"ip8-ac",etf:"ip8-etf",fii:"ip8-fii",cr:"ip8-cr",ind:"ip8-ind",indLF:"ip8-indLF",ap:"ip8-ap",orc:"ip8-orc",inco:"ip8-inco",banks:"ip8-banks",theme:"ip8-theme",apMeta:"ip8-apMeta",fiiMkt:"ip8-fiiMkt",rates:"ip8-rates",evo:"ip8-evo",cryptoQ:"ip8-cryptoQ",cotCr:"ip8-cotCr",etfHist:"ip8-etfHist",fxUsd:"ip8-fxUsd",crBase:"ip8-crBase",prfRef:"ip8-prfRef",tdApos:"ip8-tdApos",tdLiza:"ip8-tdLiza",simImo:"ip8-simImo",simProj:"ip8-simProj",simPrf:"ip8-simPrf"};
 const DEF_PRF_REF={diariaInterior:335,diariaCapitais:380,diariaSPRJ:425,horaGECC:165.78,horaADFRON:11.50,diaADFRON:92};
 function ld(k,fb){try{const r=localStorage.getItem(k);return r?JSON.parse(r):fb;}catch{return fb;}}
 function sv(k,d){try{localStorage.setItem(k,JSON.stringify(d));}catch(e){console.error(e);}}
@@ -776,21 +776,127 @@ function IncoTab({data,setData}){const P=useT();const S=useS();const[sub,setSub]
 const AC_F=[{key:"ticker",label:"Ticker"},{key:"empresa",label:"Empresa"},{key:"setor",label:"Setor"},{key:"quantidade",label:"Qtd",type:"number",step:"1"},{key:"precoMedio",label:"PM",type:"number",step:"0.01"},{key:"precoAtual",label:"Atual",type:"number",step:"0.01"},{key:"dataCompra",label:"Data",type:"date"},{key:"corretora",label:"Corretora"}];
 function AcTab({data,setData}){const P=useT();const S=useS();const tI=data.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0),tA=data.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoAtual)||Number(i.precoMedio)||0),0),lp=tA-tI;return<CRUD title="Ações" icon="▲" fields={AC_F} data={data} setData={setData} cards={<React.Fragment><SC label="Investido" value={fmt(tI)} color={P.yellow} dim={P.yellowDim}/><SC label="Atual" value={fmt(tA)} color={P.blue} dim={P.blueDim}/><SC label="L/P" value={fmt(lp)} color={lp>=0?P.accent:P.red} dim={lp>=0?P.accentGlow:P.redDim}/></React.Fragment>} columns={["Ticker","Empresa","Qtd","PM","Atual","Investido","Atual","L/P","Corretora"]} renderRow={i=>{const inv=(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),at=(Number(i.quantidade)||0)*(Number(i.precoAtual)||Number(i.precoMedio)||0),l=at-inv;return(<React.Fragment><td style={{...S.td,fontWeight:700}}>{i.ticker||"—"}</td><td style={S.td}>{i.empresa||"—"}</td><td style={S.td}>{i.quantidade||"—"}</td><td style={S.td}>{fmt(i.precoMedio)}</td><td style={S.td}>{fmt(i.precoAtual)}</td><td style={S.td}>{fmt(inv)}</td><td style={S.td}>{fmt(at)}</td><td style={{...S.td,color:l>=0?P.accent:P.red,fontWeight:600}}>{fmt(l)}</td><td style={S.td}>{i.corretora||"—"}</td></React.Fragment>);}}/>;
 }
-const ETF_F=[{key:"ticker",label:"Ticker"},{key:"nome",label:"Nome"},{key:"indiceRef",label:"Índice"},{key:"quantidade",label:"Qtd",type:"number",step:"1"},{key:"precoMedio",label:"PM",type:"number",step:"0.01"},{key:"precoAtual",label:"Atual",type:"number",step:"0.01"},{key:"taxaAdm",label:"TxAdm%",type:"number",step:"0.01"},{key:"dataCompra",label:"Data",type:"date"},{key:"corretora",label:"Corretora"}];
-function EtfTab({data,setData}){const P=useT();const S=useS();const tI=data.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0),tA=data.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoAtual)||Number(i.precoMedio)||0),0),lp=tA-tI;
-  // International ETF quotes panel (static estimates, user can update)
-  const[etfQuotes,setEtfQuotes]=useState(()=>ld("ip8-etfQ",[{ticker:"VOO",nome:"Vanguard S&P 500",precoUSD:520,precoBRL:0},{ticker:"BLK",nome:"BlackRock Inc",precoUSD:850,precoBRL:0},{ticker:"GLD",nome:"SPDR Gold",precoUSD:230,precoBRL:0}]));
-  const[loadQ,setLoadQ]=useState(false);
-  const fetchQuotes=async()=>{setLoadQ(true);try{
-    // AwesomeAPI for real-time USD/BRL
-    const r=await fetch("https://economia.awesomeapi.com.br/last/USD-BRL");
-    if(r.ok){const d=await r.json();if(d.USDBRL){const usd=Number(d.USDBRL.bid);const updated=etfQuotes.map(q=>({...q,precoBRL:(q.precoUSD*usd).toFixed(2)}));setEtfQuotes(updated);sv("ip8-etfQ",updated);}}
-  }catch{}setLoadQ(false);};
-  useEffect(()=>{if(!etfQuotes[0].precoBRL)fetchQuotes();},[]);
+/* ===================== ETFs: oscilação e retorno mensal (US$ e R$) — funções puras ===================== */
+const etfYM=d=>String(d||"").slice(0,7);
+const etfAddMes=(ym,n)=>{const t=(+ym.slice(0,4))*12+(+ym.slice(5,7)-1)+n;return `${Math.floor(t/12)}-${String(t%12+1).padStart(2,"0")}`;};
+const etfFimMes=ym=>`${ym}-${String(new Date(Date.UTC(+ym.slice(0,4),+ym.slice(5,7),0)).getUTCDate()).padStart(2,"0")}`;
+const etfAddDias=(d,n)=>new Date(ymdToUTC(d)+n*864e5).toISOString().slice(0,10);
+const etfMeses=(de,ate)=>{const r=[];for(let m=de;m<=ate;m=etfAddMes(m,1))r.push(m);return r;};
+const etfNum=x=>{const n=Number(String(x==null?"":x).replace(",","."));return isFinite(n)&&n>0?n:null;};
+/* Dólar do último dia com cotação até `data` (no máximo 10 dias antes) */
+const etfFxEm=(fx,data)=>{const dia=(fx&&fx.dia)||{};let b=null;for(const d in dia){if(d<=data&&(b==null||d>b))b=d;}return(b&&ymdToUTC(data)-ymdToUTC(b)<=10*864e5)?Number(dia[b]):null;};
+const etfCustoBRL=(i,fx)=>{const q=Number(i.quantidade)||0,pm=Number(i.precoMedio)||0;if(i.moeda!=="USD")return q*pm;const f=etfFxEm(fx,i.dataCompra||"")||(fx&&Number(fx.atual))||0;return q*pm*f;};
+const etfAtualBRL=(i,fx)=>{const q=Number(i.quantidade)||0,pa=Number(i.precoAtual)||Number(i.precoMedio)||0;return i.moeda==="USD"?q*pa*((fx&&Number(fx.atual))||0):q*pa;};
+/* Série mensal de uma posição. compras: [{data,qtd,preco}] na moeda nativa; histP/histFx: {"AAAA-MM":valor} (fechamentos informados) */
+const etfSerie=(compras,moeda,histP,histFx,fx,precoAtual,hoje)=>{
+  const usd=moeda==="USD",hojeYM=etfYM(hoje);const cs=[...compras].filter(c=>c.data&&c.qtd>0).sort((a,b)=>a.data.localeCompare(b.data));
+  if(!cs.length)return{linhas:[],resumo:null};
+  const fxAtual=(fx&&Number(fx.atual))||etfFxEm(fx,hoje)||null;
+  const fxFim=ym=>!usd?1:ym===hojeYM?fxAtual:(etfNum(histFx&&histFx[ym])||etfFxEm(fx,etfFimMes(ym)));
+  const fxCompra=d=>!usd?1:(etfFxEm(fx,d)||fxFim(etfYM(d)));
+  const preco=ym=>ym===hojeYM?etfNum(precoAtual):etfNum(histP&&histP[ym]);
+  const linhas=[];let qtdPrev=0,pPrev=null,fxPrev=null,primeiro=true;
+  etfMeses(etfYM(cs[0].data),hojeYM).forEach(ym=>{
+    const fim=etfFimMes(ym),doMes=cs.filter(c=>etfYM(c.data)===ym),qtdFim=cs.filter(c=>c.data<=fim).reduce((a,c)=>a+c.qtd,0);
+    const aporteNat=doMes.reduce((a,c)=>a+c.qtd*c.preco,0);
+    const fxs=doMes.map(c=>fxCompra(c.data));const aporteBRL=fxs.some(f=>!f)?null:doMes.reduce((a,c,i)=>a+c.qtd*c.preco*fxs[i],0);
+    const P=preco(ym),fxF=fxFim(ym);
+    const base=primeiro?(doMes.length?doMes[0].preco:null):pPrev,fxBase=primeiro?(doMes.length?fxs[0]:null):fxPrev;
+    const oscNat=(P&&base)?P/base-1:null;
+    const oscBRL=!usd?oscNat:(P&&base&&fxF&&fxBase)?(P*fxF)/(base*fxBase)-1:null;
+    const valorNat=P!=null?qtdFim*P:null;
+    const prevOk=qtdPrev===0||pPrev!=null;const valPrevNat=qtdPrev>0&&pPrev!=null?qtdPrev*pPrev:0;
+    const retNat=(valorNat!=null&&prevOk)?valorNat-valPrevNat-aporteNat:null;const bNat=valPrevNat+aporteNat;
+    const valorBRL=valorNat!=null&&fxF?valorNat*fxF:null;
+    const valPrevBRL=qtdPrev===0?0:(pPrev!=null&&fxPrev?qtdPrev*pPrev*fxPrev:null);
+    const retBRL=(valorBRL!=null&&valPrevBRL!=null&&aporteBRL!=null)?valorBRL-valPrevBRL-aporteBRL:null;const bBRL=(valPrevBRL||0)+(aporteBRL||0);
+    linhas.push({ym,parcial:ym===hojeYM,qtd:qtdFim,preco:P,fx:usd?fxF:null,precoBRL:P&&fxF?P*fxF:null,oscNat,oscBRL,
+      retNat:usd?retNat:null,retPctNat:usd&&retNat!=null&&bNat>0?retNat/bNat*100:null,retBRL,retPctBRL:retBRL!=null&&bBRL>0?retBRL/bBRL*100:null,
+      retNatNativo:retNat,retPctNativo:retNat!=null&&bNat>0?retNat/bNat*100:null,oscNat100:oscNat==null?null:oscNat*100,oscBRL100:oscBRL==null?null:oscBRL*100});
+    primeiro=false;qtdPrev=qtdFim;pPrev=P;fxPrev=fxF;
+  });
+  const qtd=cs.reduce((a,c)=>a+c.qtd,0),custoNat=cs.reduce((a,c)=>a+c.qtd*c.preco,0),pa=etfNum(precoAtual);
+  const fxsC=cs.map(c=>fxCompra(c.data));const custoBRL=fxsC.some(f=>!f)?null:cs.reduce((a,c,i)=>a+c.qtd*c.preco*fxsC[i],0);
+  const valNat=pa?qtd*pa:null,valBRL=valNat!=null&&fxAtual?valNat*fxAtual:null;
+  return{linhas,resumo:{qtd,custoNat,custoBRL,valNat,valBRL,lpNat:valNat!=null?valNat-custoNat:null,lpNatPct:valNat!=null&&custoNat>0?(valNat/custoNat-1)*100:null,
+    lpBRL:valBRL!=null&&custoBRL!=null?valBRL-custoBRL:null,lpBRLPct:valBRL!=null&&custoBRL>0?(valBRL/custoBRL-1)*100:null,pm:qtd>0?custoNat/qtd:null}};
+};
+/* Dólar: cotação atual + histórico diário (AwesomeAPI). Nunca devolve vazio por erro: quem chama mescla com o cache. */
+const etfBuscarFx=async(desde,hoje,fetchFn)=>{
+  const f=fetchFn||((...a)=>fetch(...a));const dia={},erros=[];let atual=null;
+  const msg=e=>e&&e.name==="AbortError"?"tempo esgotado":String((e&&e.message)||e);
+  try{const d=await crFetchJSON(f,"https://economia.awesomeapi.com.br/last/USD-BRL");if(d&&d.USDBRL&&Number(d.USDBRL.bid)>0)atual=Number(d.USDBRL.bid);else erros.push("dólar atual indisponível");}catch(e){erros.push("dólar atual: "+msg(e));}
+  let ini=desde;
+  while(desde&&ini<=hoje){const fim=etfAddDias(ini,299)<hoje?etfAddDias(ini,299):hoje;
+    try{const arr=await crFetchJSON(f,`https://economia.awesomeapi.com.br/json/daily/USD-BRL/400?start_date=${ini.replace(/-/g,"")}&end_date=${fim.replace(/-/g,"")}`);
+      (Array.isArray(arr)?arr:[]).forEach(x=>{const b=Number(x.bid),ts=Number(x.timestamp);if(b>0&&ts)dia[new Date(ts*1000-3*3600e3).toISOString().slice(0,10)]=b;});}
+    catch(e){erros.push("histórico do dólar: "+msg(e));break;}
+    ini=etfAddDias(fim,1);}
+  return{atual,dia,erros};
+};
+const etfMesclarFx=(prev,res,desde,agoraISO)=>{const b={atual:null,dia:{},desde:null,ultimaOK:null,erro:null,...(prev||{})};
+  const dia={...b.dia,...res.dia};const novo=res.atual!=null||Object.keys(res.dia).length>0;
+  return{atual:res.atual!=null?res.atual:b.atual,dia,desde:!res.erros.some(e=>e.startsWith("histórico"))&&desde?(b.desde&&b.desde<desde?b.desde:desde):b.desde,ultimaOK:novo?agoraISO:b.ultimaOK,ultimaTentativa:agoraISO,erro:res.erros.length?res.erros.join(" · "):null};};
+const ETF_F=[{key:"ticker",label:"Ticker"},{key:"nome",label:"Nome"},{key:"moeda",label:"Moeda do preço",type:"select",options:["USD","BRL"]},{key:"indiceRef",label:"Índice"},{key:"quantidade",label:"Qtd",type:"number",step:"0.00000001"},{key:"precoMedio",label:"Preço de compra",type:"number",step:"0.01"},{key:"precoAtual",label:"Preço atual",type:"number",step:"0.01"},{key:"taxaAdm",label:"TxAdm%",type:"number",step:"0.01"},{key:"dataCompra",label:"Data",type:"date"},{key:"corretora",label:"Corretora"}];
+const etfUsd=v=>v==null||v===""||!isFinite(Number(v))?"—":Number(v).toLocaleString("en-US",{style:"currency",currency:"USD"});
+const etfMesFmt=ym=>`${ym.slice(5)}/${ym.slice(0,4)}`;
+/* Colar fechamentos: linhas "2025-01;610,33" ou "01/2025;610,33" (também aceita dd/mm/aaaa) */
+const etfParseFech=text=>{const r={};String(text||"").split(/\r?\n/).forEach(l=>{const c=tdParseLine(l.trim());if(c.length<2)return;let ym=null,i0=-1;
+  c.forEach((x,i)=>{if(ym)return;let m=x.match(/^(\d{4})-(\d{2})/);if(m){ym=`${m[1]}-${m[2]}`;i0=i;return;}m=x.match(/^(?:\d{1,2}\/)?(\d{1,2})\/(\d{4})$/);if(m){ym=`${m[2]}-${m[1].padStart(2,"0")}`;i0=i;}});
+  if(!ym||+ym.slice(5)<1||+ym.slice(5)>12)return;const v=c.find((x,i)=>i!==i0&&tdMoney(x));if(v)r[ym]=String(tdMoney(v));});return r;};
+function EtfSerie({grupo,hist,setHist,fx,hoje,setPrecoAtual}){const P=useT();const S=useS();const[colar,setColar]=useState(null);
+  const usd=grupo.moeda==="USD";const h=hist[grupo.ticker]||{},hf=hist.USDBRL||{};
+  const s=etfSerie(grupo.compras,grupo.moeda,h,hf,fx,grupo.precoAtual,hoje);const r=s.resumo;
+  const setH=(k,ym,v)=>setHist(p=>({...p,[k]:{...(p[k]||{}),[ym]:v}}));
+  const m=(v,u)=>v==null?"—":(u?etfUsd(v):fmt(v));const cor=v=>v==null?P.textMuted:v>=0?P.accent:P.red;
+  const inp={...S.i,width:92,padding:"4px 6px",fontSize:11};
+  const linhas=[...s.linhas].reverse();const faltam=s.linhas.filter(l=>!l.parcial&&l.preco==null).length;
+  return(<div style={{...S.card,marginBottom:16}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:10}}>
+      <div style={{fontSize:15,fontWeight:700}}>{grupo.ticker} <span style={{fontSize:11,fontWeight:500,color:P.textMuted}}>{crFmtQtd(r.qtd)} cotas · PM {usd?etfUsd(r.pm):fmt(r.pm)}{grupo.semData?` · ${grupo.semData} compra(s) sem data ignorada(s)`:""}</span></div>
+      <div style={{display:"flex",gap:8,alignItems:"center",fontSize:11}}><span style={{color:P.textDim}}>Preço atual ({usd?"US$":"R$"})</span><input style={{...inp,width:100}} type="number" step="0.01" value={grupo.precoAtualTxt} onChange={e=>setPrecoAtual(grupo,e.target.value)}/>
+        <button style={{...S.btnO,padding:"4px 10px"}} onClick={()=>setColar(colar==null?"":null)}>Colar fechamentos</button></div></div>
+    <div style={{display:"flex",gap:18,flexWrap:"wrap",fontSize:12,marginBottom:10}}>
+      {usd&&<span>L/P US$: <b style={{color:cor(r.lpNat)}}>{m(r.lpNat,true)}{r.lpNatPct!=null?` (${crPct(r.lpNatPct)})`:""}</b></span>}
+      <span>L/P R$: <b style={{color:cor(r.lpBRL)}}>{m(r.lpBRL)}{r.lpBRLPct!=null?` (${crPct(r.lpBRLPct)})`:""}</b></span>
+      <span style={{color:P.textMuted}}>Valor atual: {usd?etfUsd(r.valNat)+" · ":""}{fmt(r.valBRL)}</span></div>
+    {colar!=null&&<div style={{marginBottom:10}}><textarea style={{...S.i,width:"100%",height:90,fontFamily:"monospace",fontSize:11}} placeholder={"2025-01;610,33\n2025-02;625,10"} value={colar} onChange={e=>setColar(e.target.value)}/>
+      <div style={{display:"flex",gap:8,marginTop:6}}><button style={S.btn()} onClick={()=>{const p=etfParseFech(colar);Object.entries(p).forEach(([ym,v])=>setH(grupo.ticker,ym,v));setColar(null);}}>Aplicar</button><button style={S.btnO} onClick={()=>setColar(null)}>Cancelar</button></div></div>}
+    {faltam>0&&<div style={{fontSize:11,color:P.yellow,marginBottom:8}}>⚠ {faltam} mês(es) sem fechamento {usd?"em US$":""}: oscilação e retorno ficam “—” nesses meses e no seguinte. Preencha na tabela (ou use “Colar fechamentos”).</div>}
+    <div style={{maxHeight:380,overflow:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>{(usd?["Mês","Fech. US$","Osc. US$","USD/BRL","Fech. R$","Osc. R$","Retorno US$","Ret. %","Retorno R$","Ret. %"]:["Mês","Fech. R$","Osc.","Retorno R$","Ret. %"]).map((x,ix)=><th key={ix} style={S.th}>{x}</th>)}</tr></thead>
+    <tbody>{linhas.map(l=>(<tr key={l.ym}><td style={{...S.td,whiteSpace:"nowrap"}}>{etfMesFmt(l.ym)}{l.parcial&&<span style={{fontSize:9,color:P.textMuted}}> parcial</span>}</td>
+      <td style={S.td}>{l.parcial?<span>{m(l.preco,usd)}</span>:<input style={inp} type="number" step="0.01" value={h[l.ym]||""} onChange={e=>setH(grupo.ticker,l.ym,e.target.value)}/>}</td>
+      <td style={{...S.td,color:cor(l.oscNat100),fontWeight:600}}>{crPct(usd?l.oscNat100:l.oscBRL100)}</td>
+      {usd&&<td style={S.td}>{l.parcial?<span>{l.fx?l.fx.toFixed(4):"—"}</span>:<input style={{...inp,width:76}} type="number" step="0.0001" placeholder={l.fx?l.fx.toFixed(4):""} value={hf[l.ym]||""} onChange={e=>setH("USDBRL",l.ym,e.target.value)}/>}</td>}
+      {usd&&<td style={S.td}>{m(l.precoBRL)}</td>}
+      {usd&&<td style={{...S.td,color:cor(l.oscBRL100),fontWeight:600}}>{crPct(l.oscBRL100)}</td>}
+      {usd&&<td style={{...S.td,color:cor(l.retNat)}}>{m(l.retNat,true)}</td>}
+      {usd&&<td style={{...S.td,color:cor(l.retNat)}}>{crPct(l.retPctNat)}</td>}
+      <td style={{...S.td,color:cor(l.retBRL)}}>{m(l.retBRL)}</td><td style={{...S.td,color:cor(l.retBRL)}}>{crPct(l.retPctBRL)}</td></tr>))}</tbody></table></div>
+    <div style={{fontSize:10,color:P.textMuted,marginTop:8,lineHeight:1.5}}>Oscilação = variação do preço de fechamento contra o mês anterior (no mês da 1ª compra, contra o preço pago). Retorno = valor da posição no fim do mês − valor no mês anterior − compras do mês (R$ usa o dólar do dia de cada compra e o do fim de cada mês). O mês corrente usa o preço atual informado. Sem dividendos nem taxas.</div>
+  </div>);}
+
+function EtfTab({data,setData,hist,setHist,fx,onFxRefresh,fxLoading}){const P=useT();const S=useS();
+  const hoje=localISO(new Date());const usdUsado=data.some(i=>i.moeda==="USD");
+  const nat=(i,k)=>(Number(i.quantidade)||0)*(Number(i[k])||0);
+  const tIb=data.reduce((a,i)=>a+etfCustoBRL(i,fx),0),tAb=data.reduce((a,i)=>a+etfAtualBRL(i,fx),0),lp=tAb-tIb;
+  const usdRows=data.filter(i=>i.moeda==="USD");const tIu=usdRows.reduce((a,i)=>a+nat(i,"precoMedio"),0),tAu=usdRows.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoAtual)||Number(i.precoMedio)||0),0);
+  const grupos={};data.forEach(i=>{const tk=String(i.ticker||"").trim().toUpperCase();if(!tk)return;const moeda=i.moeda==="USD"?"USD":"BRL",k=tk+"|"+moeda;const g=grupos[k]||(grupos[k]={ticker:tk,moeda,compras:[],semData:0,linhas:[]});g.linhas.push(i);
+    if(i.dataCompra&&Number(i.quantidade)>0&&Number(i.precoMedio)>0)g.compras.push({data:i.dataCompra,qtd:Number(i.quantidade),preco:Number(i.precoMedio)});else g.semData++;});
+  const lista=Object.values(grupos).map(g=>{const ordenadas=[...g.linhas].sort((a,b)=>(b.dataCompra||"").localeCompare(a.dataCompra||""));const pa=ordenadas.find(i=>Number(i.precoAtual)>0);return{...g,precoAtual:pa?Number(pa.precoAtual):null,precoAtualTxt:pa?String(pa.precoAtual):""};}).filter(g=>g.compras.length);
+  const setPrecoAtual=(g,v)=>setData(data.map(i=>(String(i.ticker||"").trim().toUpperCase()===g.ticker&&(i.moeda==="USD"?"USD":"BRL")===g.moeda)?{...i,precoAtual:v}:i));
+  const velho=fx.ultimaOK?Date.now()-new Date(fx.ultimaOK).getTime()>6*3600e3:true;
+  const f=(i,v)=>i.moeda==="USD"?etfUsd(v):fmt(v);
   return(<div>
-    {/* International ETF Quotes */}
-    <div style={{...S.card,marginBottom:20}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><div style={{fontSize:13,fontWeight:700,textTransform:"uppercase",color:P.textDim}}>Cotações ETFs Internacionais (em R$)</div><button style={S.btnO} onClick={fetchQuotes} disabled={loadQ}>{loadQ?"...":"⟳"}</button></div><div style={{display:"flex",gap:16,flexWrap:"wrap"}}>{etfQuotes.map(q=>(<div key={q.ticker} style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:8,padding:"12px 18px",minWidth:150}}><div style={{fontSize:13,fontWeight:700,color:P.text}}>{q.ticker}</div><div style={{fontSize:10,color:P.textMuted,marginBottom:4}}>{q.nome}</div><div style={{fontSize:11,color:P.textDim}}>USD {q.precoUSD.toLocaleString("en-US",{style:"currency",currency:"USD"})}</div><div style={{fontSize:16,fontWeight:700,color:P.accent}}>{q.precoBRL?fmt(q.precoBRL):"—"}</div></div>))}</div></div>
-    <CRUD title="ETFs" icon="◆" fields={ETF_F} data={data} setData={setData} cards={<React.Fragment><SC label="Investido" value={fmt(tI)} color={P.cyan} dim={P.cyanDim}/><SC label="Atual" value={fmt(tA)} color={P.blue} dim={P.blueDim}/><SC label="L/P" value={fmt(lp)} color={lp>=0?P.accent:P.red} dim={lp>=0?P.accentGlow:P.redDim}/></React.Fragment>} columns={["Ticker","Nome","Índice","Qtd","PM","Atual","Investido","Atual","L/P","TxAdm","Corretora"]} renderRow={i=>{const inv=(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),at=(Number(i.quantidade)||0)*(Number(i.precoAtual)||Number(i.precoMedio)||0),l=at-inv;return(<React.Fragment><td style={{...S.td,fontWeight:700}}>{i.ticker||"—"}</td><td style={S.td}>{i.nome||"—"}</td><td style={S.td}>{i.indiceRef||"—"}</td><td style={S.td}>{i.quantidade||"—"}</td><td style={S.td}>{fmt(i.precoMedio)}</td><td style={S.td}>{fmt(i.precoAtual)}</td><td style={S.td}>{fmt(inv)}</td><td style={S.td}>{fmt(at)}</td><td style={{...S.td,color:l>=0?P.accent:P.red,fontWeight:600}}>{fmt(l)}</td><td style={S.td}>{i.taxaAdm?`${i.taxaAdm}%`:"—"}</td><td style={S.td}>{i.corretora||"—"}</td></React.Fragment>);}}/></div>);
+    {usdUsado&&<div style={{...S.card,padding:"10px 14px",marginBottom:14,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",fontSize:12}}>
+      <button style={S.btnO} disabled={fxLoading} onClick={onFxRefresh}>{fxLoading?"Atualizando…":"↻ Atualizar dólar"}</button>
+      <span><b>USD/BRL:</b> {fx.atual?fx.atual.toFixed(4):"—"}</span>
+      <span style={{color:velho?P.yellow:P.textMuted}}>{fx.ultimaOK?`atualizado ${new Date(fx.ultimaOK).toLocaleDateString("pt-BR")} ${new Date(fx.ultimaOK).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}${velho?" — DEFASADO":""}`:"sem cotação obtida"}</span>
+      {fx.erro&&<span style={{color:P.red}}>⚠ {fx.erro}</span>}</div>}
+    <CRUD title="ETFs" icon="◆" fields={ETF_F} data={data} setData={setData} cards={<React.Fragment><SC label="Investido (R$)" value={fmt(tIb)} color={P.cyan} dim={P.cyanDim}/><SC label="Atual (R$)" value={fmt(tAb)} color={P.blue} dim={P.blueDim}/><SC label="L/P (R$)" value={fmt(lp)} color={lp>=0?P.accent:P.red} dim={lp>=0?P.accentGlow:P.redDim}/>{usdUsado&&<SC label="Investido (US$)" value={etfUsd(tIu)} color={P.cyan} dim={P.cyanDim}/>}{usdUsado&&<SC label="Atual (US$)" value={etfUsd(tAu)} color={P.blue} dim={P.blueDim}/>}</React.Fragment>} columns={["Ticker","Nome","Moeda","Qtd","Compra","Atual","Investido","Atual","L/P","Atual (R$)","TxAdm","Corretora"]} renderRow={i=>{const inv=nat(i,"precoMedio"),at=(Number(i.quantidade)||0)*(Number(i.precoAtual)||Number(i.precoMedio)||0),l=at-inv;return(<React.Fragment><td style={{...S.td,fontWeight:700}}>{i.ticker||"—"}</td><td style={S.td}>{i.nome||"—"}</td><td style={S.td}>{i.moeda==="USD"?"US$":"R$"}</td><td style={S.td}>{i.quantidade?crFmtQtd(i.quantidade):"—"}</td><td style={S.td}>{f(i,i.precoMedio)}</td><td style={S.td}>{f(i,i.precoAtual)}</td><td style={S.td}>{f(i,inv)}</td><td style={S.td}>{f(i,at)}</td><td style={{...S.td,color:l>=0?P.accent:P.red,fontWeight:600}}>{f(i,l)}</td><td style={S.td}>{i.moeda==="USD"&&!fx.atual?"—":fmt(etfAtualBRL(i,fx))}</td><td style={S.td}>{i.taxaAdm?`${i.taxaAdm}%`:"—"}</td><td style={S.td}>{i.corretora||"—"}</td></React.Fragment>);}}/>
+    {lista.length>0&&<div style={{marginTop:24}}><div style={{fontSize:18,fontWeight:700,marginBottom:12}}>Oscilação e retorno mensal</div>
+      {lista.map(g=><EtfSerie key={g.ticker+g.moeda} grupo={g} hist={hist} setHist={setHist} fx={fx} hoje={hoje} setPrecoAtual={setPrecoAtual}/>)}</div>}
+  </div>);
 }
 const CR_CORES=["#f7931a","#627eea","#f3ba2f","#23292f","#c2a633","#e84142","#345d9d","#00aae4","#8247e5","#26a17b","#2775ca","#14b8a6","#a855f7","#ef4444"];
 const crCampos=tipo=>[
@@ -2370,7 +2476,7 @@ function ProjecoesTab({tG,tRM,retPct,orc,sim,setSim,defSim}){const P=useT();cons
 }
 
 /* DASHBOARD with pie charts */
-function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc,cotCr,crBase,setCrBase}){const P=useT();const S=useS();
+function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc,cotCr,crBase,setCrBase,fxUsd}){const P=useT();const S=useS();
   const[hovEvo,setHovEvo]=useState(null);
   const[dashMes,setDashMes]=useState(()=>`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`);
   const[hovCat,setHovCat]=useState(null);
@@ -2379,7 +2485,7 @@ function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc,cotCr,crBase,setCrBase}){cons
   const tRF=rf.reduce((a,i)=>a+(Number(i.valor)||0),0);const rfE=rf.map(i=>({...i,...calcRF(i)}));const mRF=rfE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
   const tIN=inco.reduce((a,i)=>a+(Number(i.valor)||0),0);const inE=inco.map(i=>({...i,...calcINCO(i)}));const mIN=inE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
   const tAc=ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0);
-  const tEt=etfs.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0);
+  const tEt=etfs.reduce((a,i)=>a+etfCustoBRL(i,fxUsd),0);
   const tFi=fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0),dFi=fiis.reduce((a,i)=>a+(Number(i.dividendoMensal)||0),0);
   const tCr=crPatrimonio(cr,cotCr,crBase);const tG=tRF+tIN+tAc+tEt+tFi+tCr;const tRM=mRF+mIN+dFi;
   const retPct=tG>0?((tRM/tG)*100):0;
@@ -2524,6 +2630,7 @@ export default function App(){
   const[rf,setRf]=useState(()=>ld(SK.rf,[]));const[inco,setInco]=useState(()=>ld(SK.inco,[]));
   const[ac,setAc]=useState(()=>ld(SK.ac,[]));const[etfs,setEtfs]=useState(()=>ld(SK.etf,[]));
   const[fiis,setFiis]=useState(()=>ld(SK.fii,[]));const[cr,setCr]=useState(()=>ld(SK.cr,[]));
+  const[etfHist,setEtfHist]=useState(()=>ld(SK.etfHist,{}));const[fxUsd,setFxUsd]=useState(()=>ld(SK.fxUsd,{atual:null,dia:{},desde:null,ultimaOK:null,erro:null}));const[fxLoading,setFxLoading]=useState(false);const fxRef=useRef({etfs:[],fx:null,busy:false});fxRef.current.etfs=etfs;fxRef.current.fx=fxUsd;
   const[cotCr,setCotCr]=useState(()=>ld(SK.cotCr,{quotes:{},ultimaOK:null,ultimaTentativa:null,erro:null}));const[crBase,setCrBase]=useState(()=>ld(SK.crBase,"mercado"));const[crLoading,setCrLoading]=useState(false);
   const crRef=useRef({cr:[],cot:null,busy:false});crRef.current.cr=cr;crRef.current.cot=cotCr;
   const[indices,setIndices]=useState(()=>ld(SK.ind,DEF_IND));
@@ -2540,11 +2647,19 @@ export default function App(){
   const[simPrf,setSimPrf]=useState(()=>ld(SK.simPrf,DEF_SIM_PRF));
   const[simProj,setSimProj]=useState(()=>ld(SK.simProj,DEF_SIM_PROJ));
   useEffect(()=>{loadFromFirestore(FIXED_USER);},[]);
-  const loadFromFirestore=async(uid)=>{try{setSyncStatus("Sincronizando...");const snap=await getDoc(doc(db,"investpro",uid));if(snap.exists()){const d=snap.data();if(d.rf)setRf(d.rf);if(d.inco)setInco(d.inco);if(d.ac)setAc(d.ac);if(d.etfs)setEtfs(d.etfs);if(d.fiis)setFiis(d.fiis);if(d.cr)setCr(d.cr);if(d.indices)setIndices(d.indices);if(d.aportes)setAportes(d.aportes);if(d.orc)setOrc(d.orc);if(d.banks)setBanks(d.banks);if(d.apMeta!=null)setApMeta(d.apMeta);if(d.fiiMkt)setFiiMkt(d.fiiMkt);if(d.evo)setEvo(d.evo);if(d.tdApos)setTdApos(d.tdApos);if(d.tdLiza)setTdLiza(d.tdLiza);if(d.simImo)setSimImo(d.simImo);if(d.simPrf)setSimPrf(d.simPrf);if(d.simProj)setSimProj(d.simProj);if(d.theme!=null)setIsDark(d.theme);if(d.font)setFont(d.font);if(d.prfRef)setPrfRef(d.prfRef);}setSyncStatus("\u2713 Sincronizado");setTimeout(()=>setSyncStatus(""),3000);}catch(e){console.error(e);setSyncStatus("Erro sync");}};
-  const saveTimer=useRef(null);const saveToFirestore=useCallback(()=>{if(saveTimer.current)clearTimeout(saveTimer.current);saveTimer.current=setTimeout(async()=>{try{await setDoc(doc(db,"investpro",FIXED_USER),{rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,simImo,simPrf,simProj,theme:isDark,font,prfRef,updatedAt:new Date().toISOString()},{merge:true});}catch(e){console.error(e);}},2000);},[rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,simImo,simPrf,simProj,isDark,font,prfRef]);
+  const loadFromFirestore=async(uid)=>{try{setSyncStatus("Sincronizando...");const snap=await getDoc(doc(db,"investpro",uid));if(snap.exists()){const d=snap.data();if(d.rf)setRf(d.rf);if(d.inco)setInco(d.inco);if(d.ac)setAc(d.ac);if(d.etfs)setEtfs(d.etfs);if(d.etfHist)setEtfHist(d.etfHist);if(d.fiis)setFiis(d.fiis);if(d.cr)setCr(d.cr);if(d.indices)setIndices(d.indices);if(d.aportes)setAportes(d.aportes);if(d.orc)setOrc(d.orc);if(d.banks)setBanks(d.banks);if(d.apMeta!=null)setApMeta(d.apMeta);if(d.fiiMkt)setFiiMkt(d.fiiMkt);if(d.evo)setEvo(d.evo);if(d.tdApos)setTdApos(d.tdApos);if(d.tdLiza)setTdLiza(d.tdLiza);if(d.simImo)setSimImo(d.simImo);if(d.simPrf)setSimPrf(d.simPrf);if(d.simProj)setSimProj(d.simProj);if(d.theme!=null)setIsDark(d.theme);if(d.font)setFont(d.font);if(d.prfRef)setPrfRef(d.prfRef);}setSyncStatus("\u2713 Sincronizado");setTimeout(()=>setSyncStatus(""),3000);}catch(e){console.error(e);setSyncStatus("Erro sync");}};
+  const saveTimer=useRef(null);const saveToFirestore=useCallback(()=>{if(saveTimer.current)clearTimeout(saveTimer.current);saveTimer.current=setTimeout(async()=>{try{await setDoc(doc(db,"investpro",FIXED_USER),{rf,inco,ac,etfs,etfHist,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,simImo,simPrf,simProj,theme:isDark,font,prfRef,updatedAt:new Date().toISOString()},{merge:true});}catch(e){console.error(e);}},2000);},[rf,inco,ac,etfs,etfHist,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,simImo,simPrf,simProj,isDark,font,prfRef]);
   useEffect(()=>{sv(SK.theme,isDark);},[isDark]);useEffect(()=>{sv("ip8-font",font);},[font]);useEffect(()=>{sv(SK.rf,rf);},[rf]);useEffect(()=>{sv(SK.inco,inco);},[inco]);useEffect(()=>{sv(SK.ac,ac);},[ac]);useEffect(()=>{sv(SK.etf,etfs);},[etfs]);useEffect(()=>{sv(SK.fii,fiis);},[fiis]);useEffect(()=>{sv(SK.cr,cr);},[cr]);useEffect(()=>{sv(SK.ind,indices);},[indices]);useEffect(()=>{sv(SK.ap,aportes);},[aportes]);useEffect(()=>{sv(SK.orc,orc);},[orc]);useEffect(()=>{sv(SK.banks,banks);},[banks]);useEffect(()=>{sv(SK.apMeta,apMeta);},[apMeta]);useEffect(()=>{sv(SK.fiiMkt,fiiMkt);},[fiiMkt]);useEffect(()=>{sv(SK.evo,evo);},[evo]);useEffect(()=>{sv(SK.prfRef,prfRef);},[prfRef]);useEffect(()=>{sv(SK.tdApos,tdApos);},[tdApos]);useEffect(()=>{sv(SK.tdLiza,tdLiza);},[tdLiza]);useEffect(()=>{sv(SK.simImo,simImo);},[simImo]);useEffect(()=>{sv(SK.simPrf,simPrf);},[simPrf]);useEffect(()=>{sv(SK.simProj,simProj);},[simProj]);
-  useEffect(()=>{if(userId)saveToFirestore();},[rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,simImo,simPrf,simProj,isDark,font,prfRef,saveToFirestore]);
+  useEffect(()=>{if(userId)saveToFirestore();},[rf,inco,ac,etfs,etfHist,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,simImo,simPrf,simProj,isDark,font,prfRef,saveToFirestore]);
   useEffect(()=>{const c=ld(SK.rates,null);if(c)RATES=c;},[]);
+  useEffect(()=>{sv(SK.etfHist,etfHist);},[etfHist]);useEffect(()=>{sv(SK.fxUsd,fxUsd);},[fxUsd]);
+  const etfFxDesde=etfs.filter(i=>i.moeda==="USD"&&i.dataCompra).map(i=>i.dataCompra).sort()[0]||"";const etfTemUsd=etfs.some(i=>i.moeda==="USD");
+  const fxRefresh=useCallback(async()=>{const r=fxRef.current;if(r.busy)return;const des=r.etfs.filter(i=>i.moeda==="USD"&&i.dataCompra).map(i=>i.dataCompra).sort()[0]||"";const hj=localISO(new Date());if(!r.etfs.some(i=>i.moeda==="USD"))return;
+    const cache=r.fx||{};const ult=Object.keys(cache.dia||{}).sort().pop();const ini=(cache.desde&&des&&cache.desde<=des&&ult)?etfAddDias(ult,-10):des;
+    r.busy=true;setFxLoading(true);try{const res=await etfBuscarFx(ini,hj);setFxUsd(prev=>etfMesclarFx(prev,res,ini,new Date().toISOString()));}
+    catch(e){setFxUsd(prev=>({...prev,ultimaTentativa:new Date().toISOString(),erro:String((e&&e.message)||e)}));}finally{r.busy=false;setFxLoading(false);}},[]);
+  useEffect(()=>{if(!etfTemUsd)return;const precisa=()=>{const c=fxRef.current.fx||{};return !c.atual||!c.ultimaTentativa||Date.now()-new Date(c.ultimaTentativa).getTime()>30*60*1000||(!c.desde||(etfFxDesde&&c.desde>etfFxDesde));};
+    if(precisa())fxRefresh();const t=setInterval(()=>{if(precisa())fxRefresh();},5*60*1000);return()=>clearInterval(t);},[etfTemUsd,etfFxDesde,fxRefresh]);
   useEffect(()=>{sv(SK.cotCr,cotCr);},[cotCr]);useEffect(()=>{sv(SK.crBase,crBase);},[crBase]);
   const crRefresh=useCallback(async()=>{const r=crRef.current;if(r.busy)return;const tks=crCalcular(r.cr).posicoes.map(p=>p.ticker);if(!tks.length)return;r.busy=true;setCrLoading(true);
     try{const res=await crBuscarCotacoes(tks);setCotCr(prev=>crMesclarCotacoes(prev,res,new Date().toISOString()));}
@@ -2553,8 +2668,8 @@ export default function App(){
   const crTkKey=crCalcular(cr).posicoes.map(p=>p.ticker).join(",");
   useEffect(()=>{const precisa=()=>{const c=crRef.current.cot||{};const tks=crTkKey?crTkKey.split(","):[];if(!tks.length)return false;const faltam=tks.some(t=>!(c.quotes&&c.quotes[t]));return faltam||!c.ultimaTentativa||Date.now()-new Date(c.ultimaTentativa).getTime()>10*60*1000;};
     if(precisa())crRefresh();const t=setInterval(()=>{if(precisa())crRefresh();},60000);return()=>clearInterval(t);},[crTkKey,crRefresh]);
-  const allState=()=>({rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,theme:isDark,prfRef,font});
-  const loadState=d=>{if(d.rf)setRf(d.rf);if(d.inco)setInco(d.inco);if(d.ac)setAc(d.ac);if(d.etfs)setEtfs(d.etfs);if(d.fiis)setFiis(d.fiis);if(d.cr)setCr(d.cr);if(d.indices)setIndices(d.indices);if(d.aportes)setAportes(d.aportes);if(d.orc)setOrc(d.orc);if(d.banks)setBanks(d.banks);if(d.apMeta!=null)setApMeta(d.apMeta);if(d.fiiMkt)setFiiMkt(d.fiiMkt);if(d.evo)setEvo(d.evo);if(d.tdApos)setTdApos(d.tdApos);if(d.tdLiza)setTdLiza(d.tdLiza);if(d.simImo)setSimImo(d.simImo);if(d.simPrf)setSimPrf(d.simPrf);if(d.simProj)setSimProj(d.simProj);if(d.theme!=null)setIsDark(d.theme);if(d.prfRef)setPrfRef(d.prfRef);};
+  const allState=()=>({rf,inco,ac,etfs,etfHist,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,theme:isDark,prfRef,font});
+  const loadState=d=>{if(d.rf)setRf(d.rf);if(d.inco)setInco(d.inco);if(d.ac)setAc(d.ac);if(d.etfs)setEtfs(d.etfs);if(d.etfHist)setEtfHist(d.etfHist);if(d.fiis)setFiis(d.fiis);if(d.cr)setCr(d.cr);if(d.indices)setIndices(d.indices);if(d.aportes)setAportes(d.aportes);if(d.orc)setOrc(d.orc);if(d.banks)setBanks(d.banks);if(d.apMeta!=null)setApMeta(d.apMeta);if(d.fiiMkt)setFiiMkt(d.fiiMkt);if(d.evo)setEvo(d.evo);if(d.tdApos)setTdApos(d.tdApos);if(d.tdLiza)setTdLiza(d.tdLiza);if(d.simImo)setSimImo(d.simImo);if(d.simPrf)setSimPrf(d.simPrf);if(d.simProj)setSimProj(d.simProj);if(d.theme!=null)setIsDark(d.theme);if(d.prfRef)setPrfRef(d.prfRef);};
   const P=isDark==="dark"||isDark===true?DARK:isDark==="industrial"?INDUSTRIAL:isDark==="planner"?PLANNER:isDark==="industrial-light"?INDUSTRIAL_LIGHT:LIGHT;
   const[clock,setClock]=useState("");const[todayStr,setTodayStr]=useState("");const[weekDay,setWeekDay]=useState("");
   useEffect(()=>{const t=setInterval(()=>{const n=new Date();setClock(n.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}));setTodayStr(n.toLocaleDateString("pt-BR"));setWeekDay(n.toLocaleDateString("pt-BR",{weekday:"long"}));},1000);return()=>clearInterval(t);},[]);
@@ -2564,9 +2679,9 @@ export default function App(){
   const _rfE=rf.map(i=>({...i,...calcRF(i)})),_mRF=_rfE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
   const _inE=inco.map(i=>({...i,...calcINCO(i)})),_mIN=_inE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
   const _dFi=fiis.reduce((a,i)=>a+(Number(i.dividendoMensal)||0),0);
-  const _tG=rf.reduce((a,i)=>a+(Number(i.valor)||0),0)+inco.reduce((a,i)=>a+(Number(i.valor)||0),0)+ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+etfs.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+crPatrimonio(cr,cotCr,crBase);
+  const _tG=rf.reduce((a,i)=>a+(Number(i.valor)||0),0)+inco.reduce((a,i)=>a+(Number(i.valor)||0),0)+ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+etfs.reduce((a,i)=>a+etfCustoBRL(i,fxUsd),0)+fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+crPatrimonio(cr,cotCr,crBase);
   const _tRM=_mRF+_mIN+_dFi;const _retPct=_tG>0?((_tRM/_tG)*100):0;
-  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rf} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc} cotCr={cotCr} crBase={crBase} setCrBase={setCrBase}/>;case"comp":return<CompTab/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"proj":return<ProjecoesTab tG={_tG} tRM={_tRM} retPct={_retPct} orc={orc} sim={simProj} setSim={setSimProj} defSim={DEF_SIM_PROJ}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"td":return<TDTab apos={tdApos} setApos={setTdApos} liza={tdLiza} setLiza={setTdLiza}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr} cot={cotCr} base={crBase} setBase={setCrBase} onRefresh={crRefresh} loading={crLoading}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rf} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef} sim={simPrf} setSim={setSimPrf} defSim={DEF_SIM_PRF}/>;case"imoveis":return<ImoveisTab sim={simImo} setSim={setSimImo} defSim={DEF_SIM_IMO}/>;case"cfg":return<CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/>;default:return null;}};
+  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rf} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc} cotCr={cotCr} crBase={crBase} setCrBase={setCrBase} fxUsd={fxUsd}/>;case"comp":return<CompTab/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"proj":return<ProjecoesTab tG={_tG} tRM={_tRM} retPct={_retPct} orc={orc} sim={simProj} setSim={setSimProj} defSim={DEF_SIM_PROJ}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"td":return<TDTab apos={tdApos} setApos={setTdApos} liza={tdLiza} setLiza={setTdLiza}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs} hist={etfHist} setHist={setEtfHist} fx={fxUsd} onFxRefresh={fxRefresh} fxLoading={fxLoading}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr} cot={cotCr} base={crBase} setBase={setCrBase} onRefresh={crRefresh} loading={crLoading}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rf} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef} sim={simPrf} setSim={setSimPrf} defSim={DEF_SIM_PRF}/>;case"imoveis":return<ImoveisTab sim={simImo} setSim={setSimImo} defSim={DEF_SIM_IMO}/>;case"cfg":return<CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/>;default:return null;}};
   const isDarkSidebar=P.sidebarBg&&parseInt(P.sidebarBg.replace("#",""),16)<0x888888;
   const sbText=isDarkSidebar?"#e8e0d6":P.text;const sbTextDim=isDarkSidebar?"#a09890":P.textDim;const sbTextMuted=isDarkSidebar?"#6b635a":P.textMuted;const sbHover=isDarkSidebar?"rgba(255,255,255,0.08)":P.hover;const sbAccentGlow=isDarkSidebar?"rgba(196,98,42,0.20)":P.accentGlow;
   function SBItem({t}){const[h,setH]=useState(false);const active=tab===t.id;return(<div onClick={()=>setTab(t.id)} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 16px",cursor:"pointer",fontSize:12,fontWeight:active?600:400,color:active?P.accent:h?sbText:sbTextDim,background:active?sbAccentGlow:h?sbHover:"transparent",borderRight:active?`2px solid ${P.accent}`:"2px solid transparent",transition:"all 0.2s ease",borderRadius:h&&!active?"6px 0 0 6px":"0",transform:h&&!active?"translateX(4px)":"none"}}><span style={{fontSize:14,opacity:active?1:h?1:0.7,transition:"all 0.2s ease"}}>{t.ic}</span>{t.l}</div>);}

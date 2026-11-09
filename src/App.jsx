@@ -1551,11 +1551,22 @@ const tdParseText=text=>{const items=[];text.split(/\r?\n/).map(l=>l.trim()).fil
   for(let i=cells.length-1;i>=0;i--){if(i===di)continue;const c=cells[i];if(/^\d+$/.test(c.replace(/\s/g,""))&&!/R\$/.test(c))continue;const v=tdMoney(c);if(v){val=v;break;}}
   if(val)items.push({id:uid(),data:dt,valor:val.toFixed(2)});});return items;};
 
+/* Seleção múltipla (Tesouro Direto): clique alterna; Shift+clique marca/desmarca o intervalo desde o último clique */
+const tdToggle=(ids,sel,id,last,shift)=>{const n=new Set(sel);if(shift&&last&&ids.includes(last)&&ids.includes(id)){const a=ids.indexOf(last),b=ids.indexOf(id),lo=Math.min(a,b),hi=Math.max(a,b),on=!sel.has(id);for(let k=lo;k<=hi;k++){if(on)n.add(ids[k]);else n.delete(ids[k]);}}else{if(n.has(id))n.delete(id);else n.add(id);}return n;};
+const tdValidDate=d=>/^\d{4}-\d{2}-\d{2}$/.test(d||"");
+
 /* TESOURO DIRETO TAB */
 function TDTab({apos,setApos,liza,setLiza}){const P=useT();const S=useS();const[sub,setSub]=useState("apos");const[modal,setModal]=useState(null);const[del,setDel]=useState(null);
+  const[sel,setSel]=useState(()=>new Set());const[lastSel,setLastSel]=useState(null);const[delBulk,setDelBulk]=useState(false);
+  useEffect(()=>{setSel(new Set());setLastSel(null);},[sub]);
   const activeData=sub==="apos"?apos:liza;const setActive=sub==="apos"?setApos:setLiza;
   const total=activeData.reduce((a,i)=>a+(Number(i.valor)||0),0);
   const sorted=[...activeData].sort((a,b)=>(a.data||"").localeCompare(b.data||""));
+  const ids=sorted.map(i=>i.id);const selItems=sorted.filter(i=>sel.has(i.id));const selCount=selItems.length;
+  const selTotal=selItems.reduce((a,i)=>a+(Number(i.valor)||0),0);
+  const allSel=sorted.length>0&&selCount===sorted.length;
+  const invalidos=sorted.filter(i=>!tdValidDate(i.data));
+  const limparSel=()=>{setSel(new Set());setLastSel(null);};
   const doSave=item=>{const out={...item,id:item.id||uid()};setActive(p=>{const i=p.findIndex(x=>x.id===out.id);if(i>=0){const n=[...p];n[i]=out;return n;}return[...p,out];});setModal(null);};
   const handleCSV=e=>{const file=e.target.files[0];if(!file)return;const reader=new FileReader();
     reader.onload=ev=>{const items=tdParseText(ev.target.result);
@@ -1578,12 +1589,23 @@ function TDTab({apos,setApos,liza,setLiza}){const P=useT();const S=useS();const[
       <SC label={sub==="apos"?"Total Aposentadoria":"Total Faculdade Liza"} value={fmt(total)} color={P.accent} dim={P.accentGlow}/>
       <SC label="Registros" value={String(activeData.length)} color={P.blue} dim={P.blueDim}/>
     </div>
+    {invalidos.length>0&&(<div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"10px 16px",marginBottom:12,borderRadius:8,background:P.orangeDim,border:`1px solid ${P.orange}55`}}>
+      <span style={{fontSize:12,fontWeight:600,color:P.orange}}>⚠ {invalidos.length} registro{invalidos.length!==1?"s":""} com data inválida (provável importação com erro)</span>
+      <button style={S.btnO} onClick={()=>{setSel(new Set(invalidos.map(i=>i.id)));setLastSel(null);}}>Selecionar inválidos</button>
+    </div>)}
+    {selCount>0&&(<div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"10px 16px",marginBottom:12,borderRadius:8,background:P.redDim,border:`1px solid ${P.red}44`}}>
+      <span style={{fontSize:12,fontWeight:700}}>{selCount} selecionado{selCount!==1?"s":""} · {fmt(selTotal)}</span>
+      <button style={S.btn(P.red)} onClick={()=>setDelBulk(true)}>🗑 Excluir selecionados</button>
+      <button style={S.btnO} onClick={limparSel}>Limpar seleção</button>
+      <span style={{fontSize:10,color:P.textMuted}}>Dica: Shift+clique marca um intervalo</span>
+    </div>)}
     {sorted.length>0?(<div style={{...S.card,padding:0,overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-      <thead><tr><th style={S.th}>Data</th><th style={S.th}>Valor</th><th style={S.th}>Acumulado</th><th style={S.th}></th></tr></thead>
-      <tbody>{(()=>{let acc=0;return sorted.map(i=>{acc+=(Number(i.valor)||0);return(<TR key={i.id} onClick={()=>setModal(i)}><td style={S.td}>{fD(i.data)}</td><td style={{...S.td,fontWeight:600}}>{fmt(i.valor)}</td><td style={{...S.td,color:P.accent}}>{fmt(acc)}</td><td style={S.td}><button style={{background:"transparent",border:"none",color:P.textMuted,cursor:"pointer",fontSize:16,fontFamily:"inherit"}} onClick={e=>{e.stopPropagation();setDel(i.id);}}>✕</button></td></TR>);});})()}</tbody>
+      <thead><tr><th style={{...S.th,width:36}}><input type="checkbox" title="Selecionar todos" checked={allSel} ref={el=>{if(el)el.indeterminate=selCount>0&&!allSel;}} onChange={()=>{if(allSel)limparSel();else{setSel(new Set(ids));setLastSel(null);}}}/></th><th style={S.th}>Data</th><th style={S.th}>Valor</th><th style={S.th}>Acumulado</th><th style={S.th}></th></tr></thead>
+      <tbody>{(()=>{let acc=0;return sorted.map(i=>{acc+=(Number(i.valor)||0);return(<TR key={i.id} baseBg={sel.has(i.id)?P.accentGlow:undefined} onClick={()=>setModal(i)}><td style={{...S.td,width:36,cursor:"pointer"}} onClick={e=>{e.stopPropagation();setSel(tdToggle(ids,sel,i.id,lastSel,e.shiftKey));setLastSel(i.id);}}><input type="checkbox" checked={sel.has(i.id)} onChange={()=>{}} style={{pointerEvents:"none"}}/></td><td style={S.td}>{tdValidDate(i.data)?fD(i.data):<span style={{color:P.orange}}>{i.data||"—"} ⚠</span>}</td><td style={{...S.td,fontWeight:600}}>{fmt(i.valor)}</td><td style={{...S.td,color:P.accent}}>{fmt(acc)}</td><td style={S.td}><button style={{background:"transparent",border:"none",color:P.textMuted,cursor:"pointer",fontSize:16,fontFamily:"inherit"}} onClick={e=>{e.stopPropagation();setDel(i.id);}}>✕</button></td></TR>);});})()}</tbody>
     </table></div>):(<div style={{textAlign:"center",padding:60,color:P.textMuted}}>Nenhum registro. Adicione manualmente ou importe CSV.</div>)}
     {modal&&<Mdl title={modal==="new"?"Novo":"Editar"} fields={[{key:"data",label:"Data",type:"date"},{key:"valor",label:"Valor (R$)",type:"number",step:"0.01"}]} initial={modal==="new"?{data:new Date().toISOString().slice(0,10)}:modal} onSave={doSave} onCancel={()=>setModal(null)}/>}
     {del&&<Cfm msg="Excluir?" onOk={()=>{setActive(p=>p.filter(x=>x.id!==del));setDel(null);}} onNo={()=>setDel(null)}/>}
+    {delBulk&&<Cfm msg={`Excluir ${selCount} registro${selCount!==1?"s":""} (${fmt(selTotal)})? Esta ação não pode ser desfeita.`} onOk={()=>{setActive(p=>p.filter(x=>!sel.has(x.id)));limparSel();setDelBulk(false);}} onNo={()=>setDelBulk(false)}/>}
   </div>);
 }
 

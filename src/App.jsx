@@ -11,7 +11,7 @@ const TABS_I=[{id:"rf",l:"Renda Fixa",ic:"▤"},{id:"inco",l:"INCO",ic:"⌂"},{i
 const TABS_G=[{id:"orc",l:"Orçamento",ic:"☰"},{id:"irpf",l:"IRPF",ic:"📋"},{id:"prf",l:"PRF",ic:"📊"},{id:"imoveis",l:"Imóveis",ic:"🏠"}];
 const TABS_S=[{id:"ind",l:"Índices",ic:"≡"},{id:"cfg",l:"Config",ic:"⚙"}];
 const ALL_T=[...TABS_M,...TABS_I,...TABS_G,...TABS_S];
-const SK={rf:"ip8-rf",ac:"ip8-ac",etf:"ip8-etf",fii:"ip8-fii",cr:"ip8-cr",ind:"ip8-ind",indLF:"ip8-indLF",ap:"ip8-ap",orc:"ip8-orc",inco:"ip8-inco",banks:"ip8-banks",theme:"ip8-theme",apMeta:"ip8-apMeta",fiiMkt:"ip8-fiiMkt",rates:"ip8-rates",evo:"ip8-evo",cryptoQ:"ip8-cryptoQ",prfRef:"ip8-prfRef",tdApos:"ip8-tdApos",tdLiza:"ip8-tdLiza",simImo:"ip8-simImo",simProj:"ip8-simProj",simPrf:"ip8-simPrf"};
+const SK={rf:"ip8-rf",ac:"ip8-ac",etf:"ip8-etf",fii:"ip8-fii",cr:"ip8-cr",ind:"ip8-ind",indLF:"ip8-indLF",ap:"ip8-ap",orc:"ip8-orc",inco:"ip8-inco",banks:"ip8-banks",theme:"ip8-theme",apMeta:"ip8-apMeta",fiiMkt:"ip8-fiiMkt",rates:"ip8-rates",evo:"ip8-evo",cryptoQ:"ip8-cryptoQ",cotCr:"ip8-cotCr",crBase:"ip8-crBase",prfRef:"ip8-prfRef",tdApos:"ip8-tdApos",tdLiza:"ip8-tdLiza",simImo:"ip8-simImo",simProj:"ip8-simProj",simPrf:"ip8-simPrf"};
 const DEF_PRF_REF={diariaInterior:335,diariaCapitais:380,diariaSPRJ:425,horaGECC:165.78,horaADFRON:11.50,diaADFRON:92};
 function ld(k,fb){try{const r=localStorage.getItem(k);return r?JSON.parse(r):fb;}catch{return fb;}}
 function sv(k,d){try{localStorage.setItem(k,JSON.stringify(d));}catch(e){console.error(e);}}
@@ -399,6 +399,199 @@ const extratoPdfRows=(linhas,ignorar=[])=>{
   return rows;
 };
 
+/* ===================== CRIPTO: cálculo, cotações, importação e IR (funções puras) ===================== */
+const CR_ISENCAO_MENSAL=35000;            // limite mensal de vendas p/ alerta (conferir a regra vigente na Receita)
+const CR_DEFASADO_MS=30*60*1000;          // cotação mais antiga que isso é marcada como defasada
+const CR_CATALOGO=[
+  {tk:"BTC",nome:"Bitcoin",cg:"bitcoin",aw:"BTC",irpf:"01"},
+  {tk:"ETH",nome:"Ethereum",cg:"ethereum",aw:"ETH",irpf:"02"},
+  {tk:"BNB",nome:"BNB",cg:"binancecoin",aw:null,irpf:"02"},
+  {tk:"XRP",nome:"XRP",cg:"ripple",aw:"XRP",irpf:"02"},
+  {tk:"DOGE",nome:"Dogecoin",cg:"dogecoin",aw:"DOGE",irpf:"02"},
+  {tk:"SHIB",nome:"Shiba Inu",cg:"shiba-inu",aw:null,irpf:"02"},
+  {tk:"ETC",nome:"Ethereum Classic",cg:"ethereum-classic",aw:null,irpf:"02"},
+  {tk:"LTC",nome:"Litecoin",cg:"litecoin",aw:"LTC",irpf:"02"},
+  {tk:"SOL",nome:"Solana",cg:"solana",aw:null,irpf:"02"},
+  {tk:"ADA",nome:"Cardano",cg:"cardano",aw:null,irpf:"02"},
+  {tk:"DOT",nome:"Polkadot",cg:"polkadot",aw:null,irpf:"02"},
+  {tk:"AVAX",nome:"Avalanche",cg:"avalanche-2",aw:null,irpf:"02"},
+  {tk:"LINK",nome:"Chainlink",cg:"chainlink",aw:null,irpf:"02"},
+  {tk:"TRX",nome:"TRON",cg:"tron",aw:null,irpf:"02"},
+  {tk:"BCH",nome:"Bitcoin Cash",cg:"bitcoin-cash",aw:null,irpf:"02"},
+  {tk:"XLM",nome:"Stellar",cg:"stellar",aw:null,irpf:"02"},
+  {tk:"ATOM",nome:"Cosmos",cg:"cosmos",aw:null,irpf:"02"},
+  {tk:"USDT",nome:"Tether",cg:"tether",aw:"USDT",irpf:"03"},
+  {tk:"USDC",nome:"USD Coin",cg:"usd-coin",aw:null,irpf:"03"}
+];
+const CR_TICKERS=CR_CATALOGO.map(c=>c.tk);
+const crInfo=tk=>CR_CATALOGO.find(c=>c.tk===String(tk||"").trim().toUpperCase());
+const crTk=r=>String((r&&r.ticker)||"").trim().toUpperCase();
+const crVazio=x=>x===""||x==null;
+const crQ=x=>{if(crVazio(x))return 0;const n=Number(String(x).replace(",","."));return isFinite(n)?n:0;};
+const crFmtQtd=q=>{const n=Number(q);return isFinite(n)?n.toLocaleString("pt-BR",{maximumFractionDigits:8}):"—";};
+
+/* Posição por moeda pelo CUSTO MÉDIO. Compra: soma qtd e custo. Venda: baixa custo proporcional (qtd vendida / qtd total).
+   `ate` (YYYY-MM-DD) limita às operações até essa data; operações sem data contam como as mais antigas.
+   Compra sem valor pago = custo desconhecido (semCusto): não entra no custo nem gera lucro "fantasma". */
+const crCalcular=(cr,ate)=>{
+  const ops=(cr||[]).map((r,idx)=>({r,idx,tk:crTk(r),tipo:r.tipo==="Venda"?"Venda":"Compra",data:r.dataCompra||""}))
+    .filter(o=>o.tk&&(!ate||!o.data||o.data<=ate))
+    .sort((a,b)=>(a.data||"0000-00-00").localeCompare(b.data||"0000-00-00")||a.idx-b.idx);
+  const pos={},real=[],incons=[];
+  ops.forEach(({r,tk,tipo,data})=>{
+    const p=pos[tk]||(pos[tk]={ticker:tk,moeda:"",qtd:0,custo:0,semCusto:false,exchanges:new Set(),wallets:new Set(),precoManual:null,valorAtualLegado:0,legadoOk:true,vendeu:false});
+    if(r.moeda&&!p.moeda)p.moeda=r.moeda;
+    const q=crQ(r.quantidade);
+    if(tipo==="Compra"){
+      p.qtd+=q;const c=crQ(r.valorInvestido);
+      if(c>0)p.custo+=c;else p.semCusto=true;
+      if(r.exchange)p.exchanges.add(r.exchange);if(r.wallet)p.wallets.add(r.wallet);
+      if(crQ(r.precoManual)>0)p.precoManual=crQ(r.precoManual);        // cronológico: o mais recente vence
+      const va=crQ(r.valorAtual);if(va>0)p.valorAtualLegado+=va;else p.legadoOk=false;
+    }else{
+      const qv=Math.min(q,p.qtd);
+      if(q>p.qtd+1e-9)incons.push({ticker:tk,data,msg:`Venda de ${crFmtQtd(q)} ${tk} maior que o saldo (${crFmtQtd(p.qtd)})${data?" em "+data:""}`});
+      const custoRem=p.qtd>0?p.custo*(qv/p.qtd):0;const recebido=crQ(r.valorRecebido);
+      real.push({id:r.id,data,ticker:tk,qtd:q,recebido,custo:custoRem,ganho:recebido-custoRem,semCusto:p.semCusto});
+      p.qtd-=qv;p.custo-=custoRem;p.vendeu=true;
+      if(p.qtd<1e-12){p.qtd=0;p.custo=0;}
+    }
+  });
+  const posicoes=Object.values(pos).filter(p=>p.qtd>0).map(p=>({...p,exchanges:[...p.exchanges],wallets:[...p.wallets],precoMedio:(!p.semCusto&&p.qtd>0)?p.custo/p.qtd:null})).sort((a,b)=>a.ticker.localeCompare(b.ticker));
+  return{posicoes,realizadas:real,inconsistencias:incons};
+};
+/* Valor de mercado de uma posição: preço manual (override) > cotação > valor atual lançado (legado) > custo */
+const crValorar=(p,cot,agora=Date.now())=>{
+  const q=cot&&cot.quotes&&cot.quotes[p.ticker];
+  let preco=null,fonte="",var24h=null,defasado=false;
+  if(p.precoManual>0){preco=p.precoManual;fonte="manual";}
+  else if(q&&Number(q.brl)>0){preco=Number(q.brl);fonte=q.fonte||"cotação";var24h=q.var24h==null?null:Number(q.var24h);defasado=!q.buscadoEm||agora-new Date(q.buscadoEm).getTime()>CR_DEFASADO_MS;}
+  let valor;
+  if(preco!=null)valor=p.qtd*preco;
+  else if(p.legadoOk&&p.valorAtualLegado>0&&!p.vendeu){valor=p.valorAtualLegado;fonte="valor lançado";}
+  else{valor=p.custo;fonte=p.custo>0?"custo (sem cotação)":"sem cotação";}
+  const lp=(preco!=null&&!p.semCusto)?valor-p.custo:null;
+  return{...p,preco,fonte,var24h,defasado,valor,lp,lpPct:(lp!=null&&p.custo>0)?lp/p.custo*100:null};
+};
+const crResumo=(cr,cot,ate,agora=Date.now())=>{
+  const c=crCalcular(cr,ate);const ls=c.posicoes.map(p=>crValorar(p,cot,agora));
+  const valorTotal=ls.reduce((a,l)=>a+l.valor,0),custoTotal=ls.reduce((a,l)=>a+l.custo,0);
+  const ok=ls.filter(l=>l.lp!=null);const lp=ok.reduce((a,l)=>a+l.lp,0),baseLp=ok.reduce((a,l)=>a+l.custo,0);
+  return{linhas:ls.map(l=>({...l,peso:valorTotal>0?l.valor/valorTotal*100:0})),valorTotal,custoTotal,lp,lpPct:baseLp>0?lp/baseLp*100:null,
+    semCusto:ls.filter(l=>l.semCusto).length,semCotacao:ls.filter(l=>l.preco==null).length,realizadas:c.realizadas,inconsistencias:c.inconsistencias};
+};
+/* Patrimônio em cripto usado no Dashboard e nas Projeções: base "custo" ou "mercado" */
+const crPatrimonio=(cr,cot,base,agora=Date.now())=>{
+  const c=crCalcular(cr);
+  return c.posicoes.reduce((a,p)=>a+(base==="custo"?p.custo:crValorar(p,cot,agora).valor),0);
+};
+/* Vendas por mês (para o alerta do limite) e alertas dos últimos 12 meses */
+const crVendasPorMes=real=>{const m={};(real||[]).forEach(r=>{const k=(r.data||"").slice(0,7);if(!k)return;const x=m[k]||(m[k]={total:0,ganho:0,n:0});x.total+=r.recebido;x.ganho+=r.ganho;x.n++;});return m;};
+const crAlertasIsencao=(vendasMes,hoje,limite=CR_ISENCAO_MENSAL)=>{
+  const t=(+hoje.slice(0,4))*12+(+hoje.slice(5,7)-1)-12,corte=`${Math.floor(t/12)}-${String(t%12+1).padStart(2,"0")}`;
+  return Object.entries(vendasMes).map(([mes,v])=>({mes,total:v.total,pct:v.total/limite*100,estourou:v.total>limite,proximo:v.total>=limite*0.8&&v.total<=limite}))
+    .filter(a=>(a.estourou||a.proximo)&&a.mes>=corte).sort((a,b)=>b.mes.localeCompare(a.mes));};
+/* IRPF (Bens e Direitos, grupo 08): posição e custo em 31/12 do ano-base e do anterior */
+const crIrpfLinhas=(cr,ano)=>{
+  const a=crCalcular(cr,`${ano}-12-31`),b=crCalcular(cr,`${ano-1}-12-31`);
+  const tks=[...new Set([...a.posicoes,...b.posicoes].map(p=>p.ticker))].sort();
+  return tks.map(tk=>{const pa=a.posicoes.find(p=>p.ticker===tk),pb=b.posicoes.find(p=>p.ticker===tk),info=crInfo(tk),ref=pa||pb;
+    const local=(ref.exchanges[0]||ref.wallets[0]||"");
+    return{ticker:tk,nome:(info&&info.nome)||ref.moeda||tk,codigo:info?info.irpf:"02",qtdAtual:pa?pa.qtd:0,custoAtual:pa?pa.custo:0,qtdAnterior:pb?pb.qtd:0,custoAnterior:pb?pb.custo:0,semCusto:!!(pa&&pa.semCusto),
+      discriminacao:pa?`${crFmtQtd(pa.qtd)} ${tk} (${(info&&info.nome)||ref.moeda||tk})${pa.semCusto?"":" — custo médio R$ "+(pa.custo/pa.qtd).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}${local?" — custódia: "+local:""}`:""};});
+};
+
+/* ---------- Cotações em R$: CoinGecko (principal) + AwesomeAPI (reserva). Nunca apaga cotação boa. ---------- */
+const crFetchJSON=async(fetchFn,url,ms=12000)=>{
+  const c=typeof AbortController!=="undefined"?new AbortController():null;const t=c?setTimeout(()=>c.abort(),ms):null;
+  try{const r=await fetchFn(url,c?{signal:c.signal}:undefined);if(!r.ok)throw new Error("HTTP "+r.status);return await r.json();}
+  finally{if(t)clearTimeout(t);}
+};
+const crBuscarCotacoes=async(tickers,fetchFn)=>{
+  const f=fetchFn||((...a)=>fetch(...a));const pedidos=[...new Set((tickers||[]).map(t=>String(t).toUpperCase()))];
+  const conhecidos=pedidos.map(crInfo).filter(Boolean),semCatalogo=pedidos.filter(t=>!crInfo(t)),quotes={},erros=[];
+  const msg=e=>e&&e.name==="AbortError"?"tempo esgotado":String((e&&e.message)||e);
+  if(conhecidos.length){
+    try{const ids=[...new Set(conhecidos.map(c=>c.cg))].join(",");
+      const d=await crFetchJSON(f,`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=brl&include_24hr_change=true&include_last_updated_at=true`);
+      conhecidos.forEach(c=>{const x=d&&d[c.cg];if(x&&Number(x.brl)>0)quotes[c.tk]={brl:Number(x.brl),var24h:x.brl_24h_change==null?null:Number(x.brl_24h_change),ts:x.last_updated_at?new Date(x.last_updated_at*1000).toISOString():null,fonte:"CoinGecko"};});
+    }catch(e){erros.push("CoinGecko: "+msg(e));}
+    const faltam=conhecidos.filter(c=>!quotes[c.tk]&&c.aw);
+    if(faltam.length){
+      try{const d=await crFetchJSON(f,`https://economia.awesomeapi.com.br/last/${faltam.map(c=>c.aw+"-BRL").join(",")}`);
+        faltam.forEach(c=>{const x=d&&d[c.aw+"BRL"];if(x&&Number(x.bid)>0)quotes[c.tk]={brl:Number(x.bid),var24h:x.pctChange==null?null:Number(x.pctChange),ts:x.timestamp?new Date(Number(x.timestamp)*1000).toISOString():null,fonte:"AwesomeAPI"};});
+      }catch(e){erros.push("AwesomeAPI: "+msg(e));}
+    }
+  }
+  return{quotes,erros,semCatalogo,pedidos};
+};
+const crMesclarCotacoes=(prev,res,agoraISO)=>{
+  const b={quotes:{},ultimaOK:null,ultimaTentativa:null,erro:null,...(prev||{})};const quotes={...b.quotes};
+  Object.entries(res.quotes).forEach(([tk,q])=>{quotes[tk]={...q,buscadoEm:agoraISO};});
+  const novos=Object.keys(res.quotes).length;const partes=[...res.erros];
+  const naoVeio=res.pedidos.filter(t=>!res.quotes[t]&&!res.semCatalogo.includes(t));
+  if(naoVeio.length&&!res.erros.length)partes.push("não retornou: "+naoVeio.join(", "));
+  if(res.semCatalogo.length)partes.push("sem cotação automática para "+res.semCatalogo.join(", ")+" (informe o preço manual)");
+  return{quotes,ultimaTentativa:agoraISO,ultimaOK:novos>0?agoraISO:b.ultimaOK,erro:partes.length?partes.join(" · "):null};
+};
+
+/* ---------- Importação de extrato (CSV): reconhece colunas por sinônimos; ignora o que não é compra/venda ---------- */
+const crNorm=s=>String(s==null?"":s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g," ").trim();
+const CR_COLUNAS={
+  data:["data","date","dia","data hora","datetime","horario","criado em","executado em","data da operacao","data operacao","time","created"],
+  tipo:["tipo","type","side","lado","operacao","tipo de operacao","transacao","acao","tipo da ordem","order type"],
+  ativo:["ativo","moeda","asset","coin","ticker","simbolo","par","pair","market","mercado","criptomoeda","token","moeda comprada"],
+  qtd:["quantidade","qtd","amount","qty","quantity","volume","executado","tamanho","quantidade executada"],
+  preco:["preco","price","cotacao","preco unitario","valor unitario","unit price","preco medio"],
+  valor:["valor","total","valor total","total brl","valor brl","brl","financeiro","value","valor pago","valor recebido","custo","total pago","total recebido","total r","valor r","total em reais","valor em reais","amount brl"]
+};
+const crQtdTexto=s=>{let t=String(s==null?"":s).replace(/[^\d.,\-]/g,"");if(!t)return null;const neg=t.startsWith("-");t=t.replace(/-/g,"");
+  if(t.includes(",")&&t.includes("."))t=t.lastIndexOf(",")>t.lastIndexOf(".")?t.replace(/\./g,"").replace(",","."):t.replace(/,/g,"");
+  else if(t.includes(","))t=t.replace(",",".");else if((t.match(/\./g)||[]).length>1)t=t.replace(/\./g,"");
+  const n=Number(t);return isFinite(n)&&n>0?{n,neg}:null;};
+const crAtivoTk=s=>{let t=String(s||"").trim();if(!t)return"";const porNome=CR_CATALOGO.find(c=>crNorm(c.nome)===crNorm(t));if(porNome)return porNome.tk;
+  t=t.toUpperCase();if(/[\/\-_ ]/.test(t))t=t.split(/[\/\-_ ]/)[0];else if(t.endsWith("BRL")&&t.length>3)t=t.slice(0,-3);return /^[A-Z0-9]{2,10}$/.test(t)?t:"";};
+const crTipoOp=s=>{const t=crNorm(s);if(/\b(compra|comprar|buy|bought|purchase|c)\b/.test(t))return"Compra";if(/\b(venda|vender|sell|sold|sale|v)\b/.test(t))return"Venda";return null;};
+const crParseCSV=text=>{
+  const linhas=String(text||"").split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const mapa=cab=>{const m={},norm=cab.map(crNorm);
+    ["preco","data","tipo","ativo","qtd","valor"].forEach(k=>{const i=norm.findIndex((h,ix)=>CR_COLUNAS[k].includes(h)&&!Object.values(m).includes(ix));if(i>=0)m[k]=i;});
+    ["data","tipo","ativo","qtd","valor","preco"].forEach(k=>{if(m[k]!=null)return;const i=norm.findIndex((h,ix)=>!Object.values(m).includes(ix)&&CR_COLUNAS[k].some(s=>s.length>3&&h.includes(s)));if(i>=0)m[k]=i;});
+    return m;};
+  let hi=-1,m=null;
+  for(let i=0;i<Math.min(6,linhas.length);i++){const mm=mapa(tdParseLine(linhas[i]));if(mm.data!=null&&mm.ativo!=null&&mm.qtd!=null&&mm.tipo!=null&&(mm.valor!=null||mm.preco!=null)){hi=i;m=mm;break;}}
+  if(hi<0)return{erro:"Cabeçalho não reconhecido. O arquivo precisa ter colunas de Data, Tipo (compra/venda), Ativo/Moeda, Quantidade e Valor (ou Preço).",itens:[],ignoradas:0};
+  const itens=[];let ignoradas=0;
+  linhas.slice(hi+1).forEach(l=>{const c=tdParseLine(l);
+    const tipo=crTipoOp(c[m.tipo]);const dm=String(c[m.data]||"").match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})|(\d{4})-(\d{2})-(\d{2})/);
+    const data=dm?(dm[4]?`${dm[4]}-${dm[5]}-${dm[6]}`:`${dm[3]}-${dm[2].padStart(2,"0")}-${dm[1].padStart(2,"0")}`):null;
+    const tk=crAtivoTk(c[m.ativo]),q=crQtdTexto(c[m.qtd]);
+    let valor=m.valor!=null?tdMoney(c[m.valor]):null;
+    if(valor==null&&m.preco!=null&&q){const pr=tdMoney(c[m.preco]);if(pr)valor=Math.round(pr*q.n*100)/100;}
+    if(!tipo||!data||!tk||!q||!(valor>0)){ignoradas++;return;}
+    itens.push({tipo,data,ticker:tk,quantidade:String(q.n),valor});});
+  return{erro:null,itens,ignoradas};
+};
+const crItemDeImport=(n,origem)=>({id:uid(),tipo:n.tipo,ticker:n.ticker,moeda:(crInfo(n.ticker)||{}).nome||n.ticker,quantidade:n.quantidade,
+  ...(n.tipo==="Venda"?{valorRecebido:n.valor.toFixed(2),valorInvestido:""}:{valorInvestido:n.valor.toFixed(2)}),valorAtual:"",exchange:origem||"",wallet:"",dataCompra:n.data});
+const crDuplicado=(existentes,n)=>existentes.some(x=>(x.tipo==="Venda"?"Venda":"Compra")===n.tipo&&crTk(x)===n.ticker&&(x.dataCompra||"")===n.data&&Math.abs(crQ(x.quantidade)-Number(n.quantidade))<1e-9&&Math.abs(crQ(n.tipo==="Venda"?x.valorRecebido:x.valorInvestido)-n.valor)<0.01);
+
+/* ---------- Cadastro: modal de Compra/Venda ---------- */
+const crPrepararModal=(row,tipo)=>{const b=row||{};const tk=crTk(b);const conhecido=!tk||!!crInfo(tk);return{...b,tipo,ticker:conhecido?tk:"OUTRA",tickerOutra:conhecido?"":tk};};
+const crFinalizarItem=it=>{const o={...it};let tk=String(o.ticker||"").trim().toUpperCase();if(tk==="OUTRA")tk=String(o.tickerOutra||"").trim().toUpperCase();
+  o.ticker=tk;delete o.tickerOutra;const info=crInfo(tk);o.moeda=info?info.nome:(o.moeda||tk);return o;};
+const crValidarItem=(it,outros)=>{
+  if(!/^[A-Z0-9]{2,10}$/.test(it.ticker||""))return"Informe a moeda (ticker com 2 a 10 letras/números).";
+  if(!(crQ(it.quantidade)>0))return"Informe a quantidade (maior que zero).";
+  if(!it.dataCompra)return"Informe a data da operação.";
+  if(it.tipo==="Venda"){
+    if(!(crQ(it.valorRecebido)>0))return"Informe o valor recebido na venda (R$).";
+    const p=crCalcular(outros,it.dataCompra).posicoes.find(x=>x.ticker===it.ticker);const saldo=p?p.qtd:0;
+    if(crQ(it.quantidade)>saldo+1e-9)return`Venda maior que o saldo de ${it.ticker} nessa data (saldo: ${crFmtQtd(saldo)}).`;
+  }
+  return null;
+};
+
 function VencSec({title,items,P}){const[open,setOpen]=useState(false);const S=useS();if(!items.length)return null;const total=items.reduce((a,i)=>a+(Number(i.valor)||0),0);return(<div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:700,color:title.includes("30d")?P.red:title.includes("180")?P.yellow:P.accent,marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:8}} onClick={()=>setOpen(!open)}><span style={{fontSize:14}}>{open?"▼":"▶"}</span>{title} ({items.length}) — Total: {fmt(total)}</div>{open&&<div style={{display:"flex",gap:8,flexWrap:"wrap",paddingLeft:22}}>{items.map(i=>(<div key={i.id} style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:6,padding:"8px 12px",fontSize:11}}><b>{i.tipo||i.incorporadora||""}</b> {i.emissor||i.empreendimento||""} — {fmt(i.valor)} — {fD(i.dataVencimento)} ({diasV(i.dataVencimento)}d)</div>))}</div>}</div>);}
 
 /* ═══ RF — columns reordered: ...Valor, Rend.Anual, Rend.Líq, Rend.Mensal, IR%, ... + 3 pie charts ═══ */
@@ -599,9 +792,127 @@ function EtfTab({data,setData}){const P=useT();const S=useS();const tI=data.redu
     <div style={{...S.card,marginBottom:20}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><div style={{fontSize:13,fontWeight:700,textTransform:"uppercase",color:P.textDim}}>Cotações ETFs Internacionais (em R$)</div><button style={S.btnO} onClick={fetchQuotes} disabled={loadQ}>{loadQ?"...":"⟳"}</button></div><div style={{display:"flex",gap:16,flexWrap:"wrap"}}>{etfQuotes.map(q=>(<div key={q.ticker} style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:8,padding:"12px 18px",minWidth:150}}><div style={{fontSize:13,fontWeight:700,color:P.text}}>{q.ticker}</div><div style={{fontSize:10,color:P.textMuted,marginBottom:4}}>{q.nome}</div><div style={{fontSize:11,color:P.textDim}}>USD {q.precoUSD.toLocaleString("en-US",{style:"currency",currency:"USD"})}</div><div style={{fontSize:16,fontWeight:700,color:P.accent}}>{q.precoBRL?fmt(q.precoBRL):"—"}</div></div>))}</div></div>
     <CRUD title="ETFs" icon="◆" fields={ETF_F} data={data} setData={setData} cards={<React.Fragment><SC label="Investido" value={fmt(tI)} color={P.cyan} dim={P.cyanDim}/><SC label="Atual" value={fmt(tA)} color={P.blue} dim={P.blueDim}/><SC label="L/P" value={fmt(lp)} color={lp>=0?P.accent:P.red} dim={lp>=0?P.accentGlow:P.redDim}/></React.Fragment>} columns={["Ticker","Nome","Índice","Qtd","PM","Atual","Investido","Atual","L/P","TxAdm","Corretora"]} renderRow={i=>{const inv=(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),at=(Number(i.quantidade)||0)*(Number(i.precoAtual)||Number(i.precoMedio)||0),l=at-inv;return(<React.Fragment><td style={{...S.td,fontWeight:700}}>{i.ticker||"—"}</td><td style={S.td}>{i.nome||"—"}</td><td style={S.td}>{i.indiceRef||"—"}</td><td style={S.td}>{i.quantidade||"—"}</td><td style={S.td}>{fmt(i.precoMedio)}</td><td style={S.td}>{fmt(i.precoAtual)}</td><td style={S.td}>{fmt(inv)}</td><td style={S.td}>{fmt(at)}</td><td style={{...S.td,color:l>=0?P.accent:P.red,fontWeight:600}}>{fmt(l)}</td><td style={S.td}>{i.taxaAdm?`${i.taxaAdm}%`:"—"}</td><td style={S.td}>{i.corretora||"—"}</td></React.Fragment>);}}/></div>);
 }
-const CR_F=[{key:"moeda",label:"Moeda"},{key:"ticker",label:"Ticker"},{key:"quantidade",label:"Qtd",type:"number",step:"0.00000001"},{key:"valorInvestido",label:"Investido",type:"number",step:"0.01"},{key:"valorAtual",label:"Atual",type:"number",step:"0.01"},{key:"exchange",label:"Exchange"},{key:"wallet",label:"Wallet"},{key:"dataCompra",label:"Data",type:"date"}];
-function CrTab({data,setData}){const P=useT();const S=useS();const tI=data.reduce((a,i)=>a+(Number(i.valorInvestido)||0),0),tA=data.reduce((a,i)=>a+(Number(i.valorAtual)||Number(i.valorInvestido)||0),0),lp=tA-tI;return(<div><CryptoPanel/><CRUD title="Cripto" icon="◈" fields={CR_F} data={data} setData={setData} cards={<React.Fragment><SC label="Investido" value={fmt(tI)} color={P.orange} dim={P.orangeDim}/><SC label="Atual" value={fmt(tA)} color={P.blue} dim={P.blueDim}/><SC label="L/P" value={fmt(lp)} color={lp>=0?P.accent:P.red} dim={lp>=0?P.accentGlow:P.redDim}/></React.Fragment>} columns={["Ticker","Moeda","Qtd","Investido","Atual","L/P","Exchange","Custódia"]} renderRow={i=>{const l=(Number(i.valorAtual)||Number(i.valorInvestido)||0)-(Number(i.valorInvestido)||0);return(<React.Fragment><td style={{...S.td,fontWeight:700}}>{i.ticker||"—"}</td><td style={S.td}>{i.moeda||"—"}</td><td style={S.td}>{i.quantidade||"—"}</td><td style={S.td}>{fmt(i.valorInvestido)}</td><td style={S.td}>{fmt(i.valorAtual)}</td><td style={{...S.td,color:l>=0?P.accent:P.red,fontWeight:600}}>{fmt(l)}</td><td style={S.td}>{i.exchange||"—"}</td><td style={S.td}>{i.wallet||"—"}</td></React.Fragment>);}}/></div>);
-}
+const CR_CORES=["#f7931a","#627eea","#f3ba2f","#23292f","#c2a633","#e84142","#345d9d","#00aae4","#8247e5","#26a17b","#2775ca","#14b8a6","#a855f7","#ef4444"];
+const crCampos=tipo=>[
+  {key:"ticker",label:"Moeda",type:"select",options:[...CR_TICKERS,"OUTRA"]},
+  {key:"tickerOutra",label:"Ticker da moeda",showWhen:"ticker=OUTRA",placeholder:"ex.: PEPE"},
+  {key:"quantidade",label:"Quantidade",type:"number",step:"0.00000001"},
+  tipo==="Venda"?{key:"valorRecebido",label:"Valor recebido (R$)",type:"number",step:"0.01"}:{key:"valorInvestido",label:"Valor pago (R$)",type:"number",step:"0.01"},
+  {key:"dataCompra",label:"Data",type:"date"},
+  {key:"exchange",label:"Exchange"},{key:"wallet",label:"Custódia (carteira)"}
+];
+const crBaixar=(nome,texto)=>{try{const b=new Blob(["﻿"+texto],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=nome;document.body.appendChild(a);a.click();document.body.removeChild(a);}catch{}};
+const crPct=v=>v==null?"—":`${v>=0?"+":""}${v.toLocaleString("pt-BR",{maximumFractionDigits:2})}%`;
+const crHora=iso=>{if(!iso)return"nunca";const d=new Date(iso);return d.toLocaleDateString("pt-BR")+" "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});};
+
+function CrOps({ops,onEdit,onDel}){const P=useT();const S=useS();
+  if(!ops.length)return<div style={{fontSize:12,color:P.textMuted,padding:12}}>Nenhuma operação.</div>;
+  return(<table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>{["Data","Tipo","Moeda","Qtd","Valor","Preço unit.","Exchange","Custódia",""].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+    <tbody>{ops.map(o=>{const v=o.tipo==="Venda"?crQ(o.valorRecebido):crQ(o.valorInvestido);const q=crQ(o.quantidade);const pu=(v>0&&q>0)?v/q:null;
+      return(<tr key={o.id}><td style={S.td}>{fD(o.dataCompra)}</td><td style={{...S.td,fontWeight:700,color:o.tipo==="Venda"?P.red:P.accent}}>{o.tipo==="Venda"?"Venda":"Compra"}</td><td style={{...S.td,fontWeight:700}}>{o.ticker||"—"}</td><td style={S.td}>{crFmtQtd(q)}</td><td style={S.td}>{v>0?fmt(v):"—"}</td><td style={S.td}>{pu!=null?fmt(pu):"—"}</td><td style={S.td}>{o.exchange||"—"}</td><td style={S.td}>{o.wallet||"—"}</td>
+        <td style={{...S.td,whiteSpace:"nowrap"}}><button style={{...S.btnO,padding:"3px 8px"}} onClick={()=>onEdit(o)}>✎</button> <button style={{...S.btnO,padding:"3px 8px",color:P.red}} onClick={()=>onDel(o)}>✕</button></td></tr>);})}</tbody></table>);}
+
+function CrIrpfTabela({cr,ano}){const P=useT();const S=useS();const ls=crIrpfLinhas(cr,ano);
+  if(!ls.length)return<div style={{fontSize:12,color:P.textMuted}}>Sem posição em cripto em 31/12/{ano}.</div>;
+  return(<table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr>{["Cód.","Moeda","Qtd 31/12/"+ano,"Custo 31/12/"+(ano-1),"Custo 31/12/"+ano,"Discriminação"].map(h=><th key={h} style={{...S.th,fontSize:10}}>{h}</th>)}</tr></thead>
+    <tbody>{ls.map(l=>(<tr key={l.ticker}><td style={S.td}>{l.codigo}</td><td style={{...S.td,fontWeight:700}}>{l.ticker}</td><td style={S.td}>{crFmtQtd(l.qtdAtual)}</td><td style={S.td}>{l.qtdAnterior>0?(l.custoAnterior>0?fmt(l.custoAnterior):"sem custo"):"—"}</td><td style={{...S.td,fontWeight:600,color:l.semCusto?P.yellow:undefined}}>{l.qtdAtual>0?(l.semCusto?"informe o custo":fmt(l.custoAtual)):"—"}</td><td style={{...S.td,fontSize:10}}>{l.discriminacao||"—"}</td></tr>))}</tbody></table>);}
+
+function CrImport({data,onImport,onClose}){const P=useT();const S=useS();
+  const[res,setRes]=useState(null);const[origem,setOrigem]=useState("");const[nome,setNome]=useState("");
+  const ler=async f=>{if(!f)return;setNome(f.name);try{const t=await f.text();setRes(crParseCSV(t));}catch(e){setRes({erro:"Não consegui ler o arquivo.",itens:[],ignoradas:0});}};
+  const novos=res&&!res.erro?res.itens.filter(n=>!crDuplicado(data,n)):[];const dups=res&&!res.erro?res.itens.length-novos.length:0;
+  // duplicatas dentro do próprio arquivo não são removidas (podem ser operações reais iguais); só contra o que já existe
+  const incons=novos.length?crCalcular([...data,...novos.map(n=>crItemDeImport(n,origem))]).inconsistencias:[];
+  return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16}} onClick={onClose}><div style={{...S.card,maxWidth:680,width:"100%",margin:0,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+    <div style={{fontSize:16,fontWeight:700,marginBottom:8}}>Importar extrato (CSV)</div>
+    <div style={{fontSize:11,color:P.textMuted,marginBottom:14,lineHeight:1.5}}>Colunas reconhecidas: Data, Tipo (compra/venda), Moeda/Ativo, Quantidade e Valor (ou Preço). Linhas que não forem compra/venda (depósitos, taxas, saques) são ignoradas. Operações idênticas às já cadastradas não são duplicadas.</div>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
+      <input type="file" accept=".csv,.txt,text/csv" onChange={e=>ler(e.target.files&&e.target.files[0])}/>
+      <input style={{...S.i,width:200}} placeholder="Exchange (opcional)" value={origem} onChange={e=>setOrigem(e.target.value)}/>
+      <button style={S.btnO} onClick={()=>crBaixar("modelo_cripto.csv","Data;Tipo;Moeda;Quantidade;Valor (R$)\n15/03/2023;Compra;BTC;0,005;4500,00\n20/06/2024;Venda;DOGE;500;250,00\n")}>Baixar modelo</button>
+    </div>
+    {res&&res.erro&&<div style={{color:P.red,fontSize:12,marginBottom:12}}>{res.erro}</div>}
+    {res&&!res.erro&&(<div style={{fontSize:12,marginBottom:12,lineHeight:1.7}}>
+      <div><b>{nome}</b>: {novos.length} nova(s) · {dups} já cadastrada(s) · {res.ignoradas} linha(s) ignorada(s)</div>
+      {incons.length>0&&<div style={{color:P.yellow}}>⚠ {incons.length} venda(s) ficariam sem saldo (falta a compra correspondente): {incons.slice(0,3).map(i=>i.msg).join("; ")}</div>}
+      {novos.length>0&&<div style={{maxHeight:220,overflowY:"auto",marginTop:8}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr>{["Data","Tipo","Moeda","Qtd","Valor"].map(h=><th key={h} style={{...S.th,fontSize:10}}>{h}</th>)}</tr></thead><tbody>{novos.map((n,i)=>(<tr key={i}><td style={S.td}>{fD(n.data)}</td><td style={{...S.td,color:n.tipo==="Venda"?P.red:P.accent,fontWeight:700}}>{n.tipo}</td><td style={S.td}>{n.ticker}</td><td style={S.td}>{crFmtQtd(n.quantidade)}</td><td style={S.td}>{fmt(n.valor)}</td></tr>))}</tbody></table></div>}
+    </div>)}
+    <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><button style={S.btnO} onClick={onClose}>Cancelar</button><button style={{...S.btn(),opacity:novos.length?1:0.5}} disabled={!novos.length} onClick={()=>onImport(novos.map(n=>crItemDeImport(n,origem)))}>Importar {novos.length||""}</button></div>
+  </div></div>);}
+
+function CrTab({data,setData,cot,base,setBase,onRefresh,loading}){const P=useT();const S=useS();
+  const[aba,setAba]=useState("carteira");const[modal,setModal]=useState(null);const[del,setDel]=useState(null);const[aberto,setAberto]=useState(null);const[imp,setImp]=useState(false);const[pm,setPm]=useState(null);
+  const[ano,setAno]=useState(()=>new Date().getFullYear());
+  const hoje=localISO(new Date());
+  const rs=crResumo(data,cot);
+  const ops=data.map(o=>({...o,ticker:crTk(o),tipo:o.tipo==="Venda"?"Venda":"Compra"})).sort((a,b)=>(b.dataCompra||"").localeCompare(a.dataCompra||""));
+  const salvar=it=>{const fin=crFinalizarItem(it);const outros=data.filter(x=>x.id!==fin.id);const err=crValidarItem(fin,outros);if(err){window.alert(err);return;}
+    const novo=data.some(x=>x.id===fin.id)?data.map(x=>x.id===fin.id?fin:x):[...data,fin];
+    if(crCalcular(novo).inconsistencias.length>crCalcular(data).inconsistencias.length){window.alert("Essa alteração deixaria uma venda posterior sem saldo. Ajuste as operações em ordem.");return;}
+    setData(novo);setModal(null);};
+  const excluir=()=>{if(!del)return;setData(data.filter(x=>x.id!==del.id));setDel(null);};
+  const abrir=(tipo,row)=>setModal({tipo,initial:row?crPrepararModal(row,tipo):{tipo,ticker:"BTC",dataCompra:hoje}});
+  const salvarPreco=v=>{const tk=pm.ticker,val=crQ(v.precoManual)>0?String(crQ(v.precoManual)):"";setData(data.map(x=>(crTk(x)===tk&&x.tipo!=="Venda")?{...x,precoManual:val}:x));setPm(null);};
+  const vendasMes=crVendasPorMes(rs.realizadas),alertas=crAlertasIsencao(vendasMes,hoje),alertaAtual=alertas.find(a=>a.mes===hoje.slice(0,7));
+  const nenhuma=!rs.linhas.length;
+  const idade=cot.ultimaOK?Date.now()-new Date(cot.ultimaOK).getTime():null;const velha=idade==null||idade>CR_DEFASADO_MS;
+  const abaBtn=(k,l)=><button key={k} style={{...S.btnO,background:aba===k?P.accent:"transparent",color:aba===k?"#fff":P.textDim,borderColor:aba===k?P.accent:P.borderLight}} onClick={()=>setAba(k)}>{l}</button>;
+  const anos=[...new Set([new Date().getFullYear(),...data.map(o=>+(o.dataCompra||"").slice(0,4)).filter(Boolean)])].sort((a,b)=>b-a);
+  const vendasAno=rs.realizadas.filter(r=>(r.data||"").startsWith(String(ano))).sort((a,b)=>b.data.localeCompare(a.data));
+  const mesesAno=Object.entries(vendasMes).filter(([m])=>m.startsWith(String(ano))).sort((a,b)=>b[0].localeCompare(a[0]));
+  return(<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}><div style={{fontSize:22,fontWeight:700}}>◈ Cripto</div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}><button style={S.btn()} onClick={()=>abrir("Compra")}>+ Compra</button><button style={S.btn(P.red)} onClick={()=>abrir("Venda")}>+ Venda</button><button style={S.btnO} onClick={()=>setImp(true)}>Importar extrato</button></div></div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:12,marginBottom:14}}>
+      <SC label={base==="custo"?"Patrimônio (custo)":"Valor de mercado"} value={fmt(base==="custo"?rs.custoTotal:rs.valorTotal)} color={P.blue} dim={P.blueDim}/>
+      <SC label="Investido (custo)" value={fmt(rs.custoTotal)} color={P.orange} dim={P.orangeDim}/>
+      <SC label={"L/P"+(rs.lpPct!=null?" ("+crPct(rs.lpPct)+")":"")} value={rs.lpPct==null?"—":fmt(rs.lp)} color={(rs.lp||0)>=0?P.accent:P.red} dim={(rs.lp||0)>=0?P.accentGlow:P.redDim}/>
+    </div>
+    <div style={{...S.card,padding:"10px 14px",marginBottom:14,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",fontSize:12}}>
+      <button style={S.btnO} disabled={loading} onClick={onRefresh}>{loading?"Atualizando…":"↻ Atualizar cotações"}</button>
+      <span style={{color:velha?P.yellow:P.textMuted}}>{cot.ultimaOK?`Última cotação: ${crHora(cot.ultimaOK)}${velha?" — DEFASADA":""}`:"Sem cotação obtida ainda"}</span>
+      {cot.erro&&<span style={{color:P.red}}>⚠ {cot.erro}</span>}
+      <span style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center"}}><span style={{color:P.textMuted}}>Dashboard usa:</span>
+        <button style={{...S.btnO,padding:"4px 10px",background:base==="mercado"?P.accent:"transparent",color:base==="mercado"?"#fff":P.textDim}} onClick={()=>setBase("mercado")}>Mercado</button>
+        <button style={{...S.btnO,padding:"4px 10px",background:base==="custo"?P.accent:"transparent",color:base==="custo"?"#fff":P.textDim}} onClick={()=>setBase("custo")}>Custo</button></span>
+    </div>
+    {alertaAtual&&<div style={{...S.card,borderColor:alertaAtual.estourou?P.red:P.yellow,marginBottom:14,fontSize:12}}>{alertaAtual.estourou?"⚠ Vendas deste mês já passam de":"⚠ Vendas deste mês próximas de"} {fmt(CR_ISENCAO_MENSAL)}: {fmt(alertaAtual.total)} ({alertaAtual.pct.toFixed(0)}%). Veja “Vendas & IR”.</div>}
+    {rs.inconsistencias.length>0&&<div style={{...S.card,borderColor:P.yellow,marginBottom:14,fontSize:12}}>⚠ {rs.inconsistencias.slice(0,3).map(i=>i.msg).join(" · ")}</div>}
+    <div style={{display:"flex",gap:8,marginBottom:14}}>{abaBtn("carteira","Carteira")}{abaBtn("ops",`Operações (${data.length})`)}{abaBtn("ir","Vendas & IR")}</div>
+
+    {aba==="carteira"&&(nenhuma?<div style={{...S.card,fontSize:13,color:P.textMuted}}>Nenhuma posição. Use “+ Compra” ou importe um extrato.</div>:(<div>
+      <div style={{display:"grid",gridTemplateColumns:"minmax(0,2.4fr) minmax(0,1fr)",gap:16,alignItems:"start"}} className="cr-grid">
+        <div style={{...S.card,padding:0,overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>{["Moeda","Qtd","Preço médio","Investido","Preço atual","24h","Valor atual","L/P","%","Peso"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+        <tbody>{rs.linhas.map(l=>{const sub=ops.filter(o=>o.ticker===l.ticker);return(<React.Fragment key={l.ticker}>
+          <TR onClick={()=>setAberto(aberto===l.ticker?null:l.ticker)}><td style={{...S.td,fontWeight:700}}>{aberto===l.ticker?"▼":"▶"} {l.ticker} <span style={{fontWeight:400,color:P.textMuted,fontSize:10}}>{(crInfo(l.ticker)||{}).nome||l.moeda}</span></td>
+            <td style={S.td}>{crFmtQtd(l.qtd)}</td><td style={S.td}>{l.precoMedio!=null?fmt(l.precoMedio):"—"}</td><td style={S.td}>{l.semCusto?<span title="Há compra sem valor pago">{fmt(l.custo)} ⚠</span>:fmt(l.custo)}</td>
+            <td style={S.td}>{l.preco!=null?fmt(l.preco):"—"} <span style={{fontSize:9,color:l.defasado?P.yellow:P.textMuted}}>{l.preco==null?l.fonte:l.fonte+(l.defasado?" · defasada":"")}</span> <span style={{cursor:"pointer"}} title="Definir preço manual" onClick={e=>{e.stopPropagation();setPm({ticker:l.ticker,precoManual:l.fonte==="manual"?String(l.preco):""});}}>✎</span></td>
+            <td style={{...S.td,color:l.var24h==null?P.textMuted:l.var24h>=0?P.accent:P.red}}>{crPct(l.var24h)}</td>
+            <td style={{...S.td,fontWeight:600}}>{fmt(l.valor)}</td><td style={{...S.td,fontWeight:600,color:l.lp==null?P.textMuted:l.lp>=0?P.accent:P.red}}>{l.lp==null?"—":fmt(l.lp)}</td><td style={{...S.td,color:l.lpPct==null?P.textMuted:l.lpPct>=0?P.accent:P.red}}>{crPct(l.lpPct)}</td><td style={S.td}>{l.peso.toFixed(1)}%</td></TR>
+          {aberto===l.ticker&&<tr><td colSpan={10} style={{padding:10,background:P.surfaceAlt}}><CrOps ops={sub} onEdit={o=>abrir(o.tipo,o)} onDel={setDel}/></td></tr>}</React.Fragment>);})}</tbody></table></div>
+        <div style={{...S.card,padding:20}}><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:14}}>Alocação por moeda</div><Pie data={rs.linhas.filter(l=>l.valor>0).map((l,i)=>({label:l.ticker,value:l.valor,color:CR_CORES[i%CR_CORES.length]}))} size={200}/></div>
+      </div>
+      <div style={{fontSize:10,color:P.textMuted,marginTop:8}}>L/P é calculado só onde há valor pago em todas as compras da moeda. “Preço atual” vem das cotações (CoinGecko, reserva AwesomeAPI) ou do preço manual (✎), que tem prioridade.</div>
+    </div>))}
+
+    {aba==="ops"&&<div style={{...S.card,padding:0,overflowX:"auto"}}><CrOps ops={ops} onEdit={o=>abrir(o.tipo,o)} onDel={setDel}/></div>}
+
+    {aba==="ir"&&(<div>
+      <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:14}}><span style={{fontSize:12,color:P.textDim}}>Ano-base</span><select style={{...S.sel,width:"auto"}} value={ano} onChange={e=>setAno(Number(e.target.value))}>{anos.map(a=><option key={a} value={a}>{a}</option>)}</select></div>
+      <div style={{...S.card,marginBottom:14}}><div style={{fontSize:13,fontWeight:700,marginBottom:10}}>Vendas por mês × limite de {fmt(CR_ISENCAO_MENSAL)}</div>
+        {mesesAno.length===0?<div style={{fontSize:12,color:P.textMuted}}>Sem vendas em {ano}.</div>:<table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>{["Mês","Total vendido","% do limite","Ganho/perda","Situação"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead><tbody>{mesesAno.map(([m,v])=>{const est=v.total>CR_ISENCAO_MENSAL;return(<tr key={m}><td style={S.td}>{m.slice(5)}/{m.slice(0,4)}</td><td style={S.td}>{fmt(v.total)}</td><td style={S.td}>{(v.total/CR_ISENCAO_MENSAL*100).toFixed(0)}%</td><td style={{...S.td,color:v.ganho>=0?P.accent:P.red}}>{fmt(v.ganho)}</td><td style={{...S.td,color:est?P.red:P.accent,fontWeight:600}}>{est?"Acima do limite":"Dentro do limite"}</td></tr>);})}</tbody></table>}
+        <div style={{fontSize:10,color:P.textMuted,marginTop:8,lineHeight:1.5}}>Referência: limite de R$ 35.000 em vendas no mês (regra tradicional de isenção de ganho de capital). Confirme a regra vigente com a Receita/contador antes de declarar; o ganho aqui usa custo médio e não considera taxas.</div></div>
+      <div style={{...S.card,marginBottom:14}}><div style={{fontSize:13,fontWeight:700,marginBottom:10}}>Vendas realizadas em {ano}</div>
+        {vendasAno.length===0?<div style={{fontSize:12,color:P.textMuted}}>Nenhuma venda.</div>:<table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>{["Data","Moeda","Qtd","Recebido","Custo baixado","Ganho/perda"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead><tbody>{vendasAno.map((r,i)=>(<tr key={i}><td style={S.td}>{fD(r.data)}</td><td style={{...S.td,fontWeight:700}}>{r.ticker}</td><td style={S.td}>{crFmtQtd(r.qtd)}</td><td style={S.td}>{fmt(r.recebido)}</td><td style={S.td}>{r.semCusto?"sem custo":fmt(r.custo)}</td><td style={{...S.td,color:r.ganho>=0?P.accent:P.red}}>{fmt(r.ganho)}</td></tr>))}</tbody></table>}</div>
+      <div style={S.card}><div style={{fontSize:13,fontWeight:700,marginBottom:10}}>Bens e Direitos — Grupo 08 (posição em 31/12/{ano})</div><CrIrpfTabela cr={data} ano={ano}/>
+        <div style={{fontSize:10,color:P.textMuted,marginTop:8}}>Códigos: 01 Bitcoin, 02 outras criptomoedas, 03 stablecoins (confirme na ficha do ano).</div></div>
+    </div>)}
+
+    {modal&&<Mdl title={modal.tipo==="Venda"?"Venda de cripto":"Compra de cripto"} fields={crCampos(modal.tipo)} initial={modal.initial} onSave={salvar} onCancel={()=>setModal(null)}/>}
+    {pm&&<Mdl title={`Preço manual — ${pm.ticker} (deixe vazio para usar a cotação)`} fields={[{key:"precoManual",label:"Preço (R$)",type:"number",step:"0.00000001"}]} initial={pm} onSave={salvarPreco} onCancel={()=>setPm(null)}/>}
+    {del&&<Cfm msg={`Excluir ${del.tipo==="Venda"?"venda":"compra"} de ${crFmtQtd(crQ(del.quantidade))} ${del.ticker}?`} onOk={excluir} onNo={()=>setDel(null)}/>}
+    {imp&&<CrImport data={data} onClose={()=>setImp(false)} onImport={novos=>{setData([...data,...novos]);setImp(false);}}/>}
+  </div>);}
 
 /* FIIs — fix DY lookup with uppercase ticker */
 const FII_F=[{key:"ticker",label:"Ticker",placeholder:"HGLG11"},{key:"quantidade",label:"Qtd",type:"number",step:"1"},{key:"precoMedio",label:"PM",type:"number",step:"0.01"},{key:"ultDivManual",label:"Último Dividendo (manual)",type:"number",step:"0.01",placeholder:"Deixe vazio para usar o padrão"},{key:"dataCompra",label:"Data",type:"date"}];
@@ -1105,32 +1416,6 @@ function RFMediaPanel({data}){const P=useT();const S=useS();
 }
 
 /* CRYPTO QUOTES — AwesomeAPI for BTC, ETH, DOGE; BCB USD for SHIB */
-function CryptoPanel(){const P=useT();const S=useS();
-  const[quotes,setQuotes]=useState(()=>ld(SK.cryptoQ,[]));const[loading,setLoading]=useState(false);const[lastUp,setLastUp]=useState(()=>ld("ip8-cryptoLF",null));
-  const fetchCrypto=async()=>{setLoading(true);try{
-    // AwesomeAPI: BTC-BRL, ETH-BRL, DOGE-BRL
-    const awR=await fetch("https://economia.awesomeapi.com.br/last/BTC-BRL,ETH-BRL,DOGE-BRL");
-    let usdBrl=5.70;
-    const usdR=await fetch("https://economia.awesomeapi.com.br/last/USD-BRL");
-    if(usdR.ok){const ud=await usdR.json();if(ud.USDBRL)usdBrl=Number(ud.USDBRL.bid);}
-    const q=[];
-    if(awR.ok){const d=await awR.json();
-      if(d.BTCBRL)q.push({id:"bitcoin",symbol:"BTC",name:"Bitcoin",usd:(Number(d.BTCBRL.bid)/usdBrl).toFixed(0),brl:Number(d.BTCBRL.bid).toFixed(2)});
-      if(d.ETHBRL)q.push({id:"ethereum",symbol:"ETH",name:"Ethereum",usd:(Number(d.ETHBRL.bid)/usdBrl).toFixed(0),brl:Number(d.ETHBRL.bid).toFixed(2)});
-      if(d.DOGEBRL)q.push({id:"dogecoin",symbol:"DOGE",name:"Dogecoin",usd:(Number(d.DOGEBRL.bid)/usdBrl).toFixed(4),brl:Number(d.DOGEBRL.bid).toFixed(4)});
-    }
-    // SHIB: not on AwesomeAPI, use estimate with USD rate
-    const shibUsd=0.000014;q.push({id:"shiba-inu",symbol:"SHIB",name:"Shiba Inu",usd:shibUsd,brl:(shibUsd*usdBrl).toFixed(6)});
-    if(q.length)setQuotes(q);sv(SK.cryptoQ,q);
-    const now=new Date().toISOString();setLastUp(now);sv("ip8-cryptoLF",now);
-  }catch{}setLoading(false);};
-  useEffect(()=>{if(!quotes.length)fetchCrypto();},[]);
-  return(<div style={{...S.card,marginBottom:20}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><div style={{fontSize:13,fontWeight:700,textTransform:"uppercase",color:P.textDim}}>Cotações Criptomoedas (tempo real)</div><button style={S.btnO} onClick={fetchCrypto} disabled={loading}>{loading?"...":"⟳ Atualizar"}</button></div>
-    {lastUp&&<div style={{fontSize:11,color:P.textMuted,marginBottom:12}}>Última: {new Date(lastUp).toLocaleDateString("pt-BR")} às {new Date(lastUp).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</div>}
-    <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>{quotes.map(q=>(<div key={q.id} style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:8,padding:"12px 18px",minWidth:160}}><div style={{fontSize:13,fontWeight:700,color:P.text}}>{q.symbol}</div><div style={{fontSize:10,color:P.textMuted,marginBottom:4}}>{q.name}</div><div style={{fontSize:11,color:P.textDim}}>USD {Number(q.usd)<0.01?`$${q.usd}`:`$${Number(q.usd).toLocaleString("en-US")}`}</div><div style={{fontSize:16,fontWeight:700,color:P.orange}}>{q.brl?fmt(q.brl):"—"}</div></div>))}</div>
-  </div>);
-}
 
 /* 3. BENCHMARK COMPARISON (used in Dashboard) */
 function LiquidezPanel({rf,inco,P,S}){
@@ -1295,7 +1580,7 @@ function IrpfTab({rf,inco,fiis,fiiMkt,ac,etfs,cr}){const P=useT();const S=useS()
   const fiiTotal=fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0);
   const fiiDiv=fiis.reduce((a,i)=>a+(Number(i.dividendoMensal)||0)*12,0);
   const acTotal=ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0);
-  const crTotal=cr.reduce((a,i)=>a+(Number(i.valorInvestido)||0),0);
+  const crLinhas=crIrpfLinhas(cr,ano);const crTotal=crLinhas.reduce((a,l)=>a+l.custoAtual,0);
   const rfTrib=rfAtivos.filter(i=>temIR(i.tipo));
   const rfRendTrib=rfTrib.reduce((a,i)=>{const c=calcRF(i);return a+(Number(c.rendAnual)||0);},0);
   const rfIR=rfTrib.reduce((a,i)=>{const c=calcRF(i);return a+(Number(c.rendAnual)||0)*(c.irPct/100);},0);
@@ -1328,10 +1613,7 @@ function IrpfTab({rf,inco,fiis,fiiMkt,ac,etfs,cr}){const P=useT();const S=useS()
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr><th style={{...S.th,fontSize:10}}>Ticker</th><th style={{...S.th,fontSize:10}}>Qtd</th><th style={{...S.th,fontSize:10}}>PM</th><th style={{...S.th,fontSize:10}}>Total</th></tr></thead>
         <tbody>{ac.map(i=>{const inv=(Number(i.quantidade)||0)*(Number(i.precoMedio)||0);return(<tr key={i.id}><td style={{...S.td,fontWeight:700}}>{i.ticker}</td><td style={S.td}>{i.quantidade}</td><td style={S.td}>{fmt(i.precoMedio)}</td><td style={{...S.td,fontWeight:600}}>{fmt(inv)}</td></tr>);})}</tbody></table>
       </IrpfExpand>)}
-      {crTotal>0&&(<IrpfExpand label={`08 - Criptoativos (${cr.length} moedas) — ${fmt(crTotal)}`} P={P} S={S}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr><th style={{...S.th,fontSize:10}}>Moeda</th><th style={{...S.th,fontSize:10}}>Qtd</th><th style={{...S.th,fontSize:10}}>Investido</th></tr></thead>
-        <tbody>{cr.map(i=>(<tr key={i.id}><td style={{...S.td,fontWeight:700}}>{i.ticker||i.moeda}</td><td style={S.td}>{i.quantidade}</td><td style={{...S.td,fontWeight:600}}>{fmt(i.valorInvestido)}</td></tr>))}</tbody></table>
-      </IrpfExpand>)}
+      {crLinhas.some(l=>l.qtdAtual>0)&&(<IrpfExpand label={`08 - Criptoativos (${crLinhas.filter(l=>l.qtdAtual>0).length} moedas) — ${fmt(crTotal)}`} P={P} S={S}><CrIrpfTabela cr={cr} ano={ano}/></IrpfExpand>)}
       <div style={{borderTop:`2px solid ${P.border}`,paddingTop:12,marginTop:8,display:"flex",justifyContent:"space-between",fontSize:14,fontWeight:700}}><span>TOTAL BENS E DIREITOS</span><span style={{color:P.accent}}>{fmt(totalBens)}</span></div>
     </div>
 
@@ -2088,7 +2370,7 @@ function ProjecoesTab({tG,tRM,retPct,orc,sim,setSim,defSim}){const P=useT();cons
 }
 
 /* DASHBOARD with pie charts */
-function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc}){const P=useT();const S=useS();
+function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc,cotCr,crBase,setCrBase}){const P=useT();const S=useS();
   const[hovEvo,setHovEvo]=useState(null);
   const[dashMes,setDashMes]=useState(()=>`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`);
   const[hovCat,setHovCat]=useState(null);
@@ -2099,7 +2381,7 @@ function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc}){const P=useT();const S=useS
   const tAc=ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0);
   const tEt=etfs.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0);
   const tFi=fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0),dFi=fiis.reduce((a,i)=>a+(Number(i.dividendoMensal)||0),0);
-  const tCr=cr.reduce((a,i)=>a+(Number(i.valorInvestido)||0),0);const tG=tRF+tIN+tAc+tEt+tFi+tCr;const tRM=mRF+mIN+dFi;
+  const tCr=crPatrimonio(cr,cotCr,crBase);const tG=tRF+tIN+tAc+tEt+tFi+tCr;const tRM=mRF+mIN+dFi;
   const retPct=tG>0?((tRM/tG)*100):0;
   const smIdx=indices.find(i=>i.nome==="Sal.Mínimo");const salMin=smIdx&&smIdx.valor?Number(smIdx.valor):1518;const smRatio=salMin>0?(tRM/salMin):0;
   const patD=[{label:"RF",value:tRF,color:P.blue},{label:"INCO",value:tIN,color:P.cyan},{label:"Ações",value:tAc,color:P.yellow},{label:"ETFs",value:tEt,color:"#0891b2"},{label:"FIIs",value:tFi,color:P.purple},{label:"Cripto",value:tCr,color:P.orange}];
@@ -2224,7 +2506,7 @@ function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc}){const P=useT();const S=useS
     </div>
 
     {/* Pie charts + Benchmark */}
-    {tG>0&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}><div style={{...S.card,padding:24}}><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Valor Investido</div><Pie data={patD} size={220}/></div>{tRM>0&&<div style={{...S.card,padding:24}}><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Renda Mensal</div><Pie data={renD} size={220}/></div>}</div>)}
+    {tG>0&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}><div style={{...S.card,padding:24}}><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Valor Investido <span style={{textTransform:"none",fontWeight:500}}>(cripto a {crBase==="custo"?"custo":"mercado"} · <span style={{cursor:"pointer",color:P.accent}} onClick={()=>setCrBase(crBase==="custo"?"mercado":"custo")}>alternar</span>)</span></div><Pie data={patD} size={220}/></div>{tRM>0&&<div style={{...S.card,padding:24}}><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Renda Mensal</div><Pie data={renD} size={220}/></div>}</div>)}
     {tG>0&&<BenchmarkPanel tG={tG} retPctAnual={retPct*12} P={P} S={S}/>}
     {tG>0&&<LiquidezPanel rf={rf} inco={inco} P={P} S={S}/>}
     {indices.some(i=>i.valor)&&(<div style={S.card}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",color:P.textDim,marginBottom:14}}>Índices</div><div style={{display:"flex",flexWrap:"wrap",gap:14}}>{indices.filter(i=>i.valor).map(i=>(<div key={i.nome} style={{minWidth:100}}><div style={{fontSize:10,color:P.textMuted}}>{i.nome}</div><div style={{fontSize:14,fontWeight:700}}>{i.unidade==="R$"?fmt(i.valor):fP(i.valor)}</div></div>))}</div></div>)}
@@ -2242,6 +2524,8 @@ export default function App(){
   const[rf,setRf]=useState(()=>ld(SK.rf,[]));const[inco,setInco]=useState(()=>ld(SK.inco,[]));
   const[ac,setAc]=useState(()=>ld(SK.ac,[]));const[etfs,setEtfs]=useState(()=>ld(SK.etf,[]));
   const[fiis,setFiis]=useState(()=>ld(SK.fii,[]));const[cr,setCr]=useState(()=>ld(SK.cr,[]));
+  const[cotCr,setCotCr]=useState(()=>ld(SK.cotCr,{quotes:{},ultimaOK:null,ultimaTentativa:null,erro:null}));const[crBase,setCrBase]=useState(()=>ld(SK.crBase,"mercado"));const[crLoading,setCrLoading]=useState(false);
+  const crRef=useRef({cr:[],cot:null,busy:false});crRef.current.cr=cr;crRef.current.cot=cotCr;
   const[indices,setIndices]=useState(()=>ld(SK.ind,DEF_IND));
   const[prfRef,setPrfRef]=useState(()=>ld(SK.prfRef,DEF_PRF_REF));
   const[aportes,setAportes]=useState(()=>ld(SK.ap,[]));const[orc,setOrc]=useState(()=>ld(SK.orc,[]));
@@ -2261,6 +2545,14 @@ export default function App(){
   useEffect(()=>{sv(SK.theme,isDark);},[isDark]);useEffect(()=>{sv("ip8-font",font);},[font]);useEffect(()=>{sv(SK.rf,rf);},[rf]);useEffect(()=>{sv(SK.inco,inco);},[inco]);useEffect(()=>{sv(SK.ac,ac);},[ac]);useEffect(()=>{sv(SK.etf,etfs);},[etfs]);useEffect(()=>{sv(SK.fii,fiis);},[fiis]);useEffect(()=>{sv(SK.cr,cr);},[cr]);useEffect(()=>{sv(SK.ind,indices);},[indices]);useEffect(()=>{sv(SK.ap,aportes);},[aportes]);useEffect(()=>{sv(SK.orc,orc);},[orc]);useEffect(()=>{sv(SK.banks,banks);},[banks]);useEffect(()=>{sv(SK.apMeta,apMeta);},[apMeta]);useEffect(()=>{sv(SK.fiiMkt,fiiMkt);},[fiiMkt]);useEffect(()=>{sv(SK.evo,evo);},[evo]);useEffect(()=>{sv(SK.prfRef,prfRef);},[prfRef]);useEffect(()=>{sv(SK.tdApos,tdApos);},[tdApos]);useEffect(()=>{sv(SK.tdLiza,tdLiza);},[tdLiza]);useEffect(()=>{sv(SK.simImo,simImo);},[simImo]);useEffect(()=>{sv(SK.simPrf,simPrf);},[simPrf]);useEffect(()=>{sv(SK.simProj,simProj);},[simProj]);
   useEffect(()=>{if(userId)saveToFirestore();},[rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,simImo,simPrf,simProj,isDark,font,prfRef,saveToFirestore]);
   useEffect(()=>{const c=ld(SK.rates,null);if(c)RATES=c;},[]);
+  useEffect(()=>{sv(SK.cotCr,cotCr);},[cotCr]);useEffect(()=>{sv(SK.crBase,crBase);},[crBase]);
+  const crRefresh=useCallback(async()=>{const r=crRef.current;if(r.busy)return;const tks=crCalcular(r.cr).posicoes.map(p=>p.ticker);if(!tks.length)return;r.busy=true;setCrLoading(true);
+    try{const res=await crBuscarCotacoes(tks);setCotCr(prev=>crMesclarCotacoes(prev,res,new Date().toISOString()));}
+    catch(e){setCotCr(prev=>({...prev,ultimaTentativa:new Date().toISOString(),erro:String((e&&e.message)||e)}));}
+    finally{r.busy=false;setCrLoading(false);}},[]);
+  const crTkKey=crCalcular(cr).posicoes.map(p=>p.ticker).join(",");
+  useEffect(()=>{const precisa=()=>{const c=crRef.current.cot||{};const tks=crTkKey?crTkKey.split(","):[];if(!tks.length)return false;const faltam=tks.some(t=>!(c.quotes&&c.quotes[t]));return faltam||!c.ultimaTentativa||Date.now()-new Date(c.ultimaTentativa).getTime()>10*60*1000;};
+    if(precisa())crRefresh();const t=setInterval(()=>{if(precisa())crRefresh();},60000);return()=>clearInterval(t);},[crTkKey,crRefresh]);
   const allState=()=>({rf,inco,ac,etfs,fiis,cr,indices,aportes,orc,banks,apMeta,fiiMkt,evo,tdApos,tdLiza,theme:isDark,prfRef,font});
   const loadState=d=>{if(d.rf)setRf(d.rf);if(d.inco)setInco(d.inco);if(d.ac)setAc(d.ac);if(d.etfs)setEtfs(d.etfs);if(d.fiis)setFiis(d.fiis);if(d.cr)setCr(d.cr);if(d.indices)setIndices(d.indices);if(d.aportes)setAportes(d.aportes);if(d.orc)setOrc(d.orc);if(d.banks)setBanks(d.banks);if(d.apMeta!=null)setApMeta(d.apMeta);if(d.fiiMkt)setFiiMkt(d.fiiMkt);if(d.evo)setEvo(d.evo);if(d.tdApos)setTdApos(d.tdApos);if(d.tdLiza)setTdLiza(d.tdLiza);if(d.simImo)setSimImo(d.simImo);if(d.simPrf)setSimPrf(d.simPrf);if(d.simProj)setSimProj(d.simProj);if(d.theme!=null)setIsDark(d.theme);if(d.prfRef)setPrfRef(d.prfRef);};
   const P=isDark==="dark"||isDark===true?DARK:isDark==="industrial"?INDUSTRIAL:isDark==="planner"?PLANNER:isDark==="industrial-light"?INDUSTRIAL_LIGHT:LIGHT;
@@ -2272,9 +2564,9 @@ export default function App(){
   const _rfE=rf.map(i=>({...i,...calcRF(i)})),_mRF=_rfE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
   const _inE=inco.map(i=>({...i,...calcINCO(i)})),_mIN=_inE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
   const _dFi=fiis.reduce((a,i)=>a+(Number(i.dividendoMensal)||0),0);
-  const _tG=rf.reduce((a,i)=>a+(Number(i.valor)||0),0)+inco.reduce((a,i)=>a+(Number(i.valor)||0),0)+ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+etfs.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+cr.reduce((a,i)=>a+(Number(i.valorInvestido)||0),0);
+  const _tG=rf.reduce((a,i)=>a+(Number(i.valor)||0),0)+inco.reduce((a,i)=>a+(Number(i.valor)||0),0)+ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+etfs.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+crPatrimonio(cr,cotCr,crBase);
   const _tRM=_mRF+_mIN+_dFi;const _retPct=_tG>0?((_tRM/_tG)*100):0;
-  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rf} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc}/>;case"comp":return<CompTab/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"proj":return<ProjecoesTab tG={_tG} tRM={_tRM} retPct={_retPct} orc={orc} sim={simProj} setSim={setSimProj} defSim={DEF_SIM_PROJ}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"td":return<TDTab apos={tdApos} setApos={setTdApos} liza={tdLiza} setLiza={setTdLiza}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rf} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef} sim={simPrf} setSim={setSimPrf} defSim={DEF_SIM_PRF}/>;case"imoveis":return<ImoveisTab sim={simImo} setSim={setSimImo} defSim={DEF_SIM_IMO}/>;case"cfg":return<CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/>;default:return null;}};
+  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rf} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc} cotCr={cotCr} crBase={crBase} setCrBase={setCrBase}/>;case"comp":return<CompTab/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"proj":return<ProjecoesTab tG={_tG} tRM={_tRM} retPct={_retPct} orc={orc} sim={simProj} setSim={setSimProj} defSim={DEF_SIM_PROJ}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"td":return<TDTab apos={tdApos} setApos={setTdApos} liza={tdLiza} setLiza={setTdLiza}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr} cot={cotCr} base={crBase} setBase={setCrBase} onRefresh={crRefresh} loading={crLoading}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rf} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef} sim={simPrf} setSim={setSimPrf} defSim={DEF_SIM_PRF}/>;case"imoveis":return<ImoveisTab sim={simImo} setSim={setSimImo} defSim={DEF_SIM_IMO}/>;case"cfg":return<CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/>;default:return null;}};
   const isDarkSidebar=P.sidebarBg&&parseInt(P.sidebarBg.replace("#",""),16)<0x888888;
   const sbText=isDarkSidebar?"#e8e0d6":P.text;const sbTextDim=isDarkSidebar?"#a09890":P.textDim;const sbTextMuted=isDarkSidebar?"#6b635a":P.textMuted;const sbHover=isDarkSidebar?"rgba(255,255,255,0.08)":P.hover;const sbAccentGlow=isDarkSidebar?"rgba(196,98,42,0.20)":P.accentGlow;
   function SBItem({t}){const[h,setH]=useState(false);const active=tab===t.id;return(<div onClick={()=>setTab(t.id)} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 16px",cursor:"pointer",fontSize:12,fontWeight:active?600:400,color:active?P.accent:h?sbText:sbTextDim,background:active?sbAccentGlow:h?sbHover:"transparent",borderRight:active?`2px solid ${P.accent}`:"2px solid transparent",transition:"all 0.2s ease",borderRadius:h&&!active?"6px 0 0 6px":"0",transform:h&&!active?"translateX(4px)":"none"}}><span style={{fontSize:14,opacity:active?1:h?1:0.7,transition:"all 0.2s ease"}}>{t.ic}</span>{t.l}</div>);}

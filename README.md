@@ -39,3 +39,7 @@ O navegador vai abrir automaticamente em http://localhost:3000
 
 Todos os dados ficam salvos no localStorage do navegador.
 Enquanto você não limpar os dados do navegador, eles persistem entre sessões.
+
+## Testes
+- `npm test`: cálculos e sincronização (vitest).
+- `npm run build && npm run test:e2e`: teste de fumaça num navegador real — visita as 20 abas (app vazio e com dados) e falha em qualquer erro de JS ou tela em branco. A rede externa é simulada.

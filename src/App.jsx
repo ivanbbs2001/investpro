@@ -406,9 +406,9 @@ const extratoPdfRows=(linhas,ignorar=[])=>{
 function VencSec({title,items,P}){const[open,setOpen]=useState(false);const S=useS();if(!items.length)return null;const total=items.reduce((a,i)=>a+(Number(i.valor)||0),0);return(<div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:700,color:title.includes("30d")?P.red:title.includes("180")?P.yellow:P.accent,marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:8}} onClick={()=>setOpen(!open)}><span style={{fontSize:14}}>{open?"▼":"▶"}</span>{title} ({items.length}) — Total: {fmt(total)}</div>{open&&<div style={{display:"flex",gap:8,flexWrap:"wrap",paddingLeft:22}}>{items.map(i=>(<div key={i.id} style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:6,padding:"8px 12px",fontSize:11}}><b>{i.tipo||i.incorporadora||""}</b> {i.emissor||i.empreendimento||""} — {fmt(i.valor)} — {fD(i.dataVencimento)} ({diasV(i.dataVencimento)}d)</div>))}</div>}</div>);}
 
 /* ═══ RF — columns reordered: ...Valor, Rend.Anual, Rend.Líq, Rend.Mensal, IR%, ... + 3 pie charts ═══ */
-const RF_FIELDS=[{key:"dataInicio",label:"Data Início",type:"date"},{key:"dataVencimento",label:"Vencimento",type:"date"},{key:"tipo",label:"Tipo",type:"select",options:["CDB","CRA","CRI","LCI","LCA","Debênture","Tesouro Selic","Tesouro IPCA+","Tesouro Prefixado","LC","Outro"]},{key:"indexador",label:"Indexador",type:"select",options:["Pré","CDI","IPCA","Selic","IGPM","Outro"]},{key:"taxa",label:"Taxa (%)",type:"number",step:"0.01"},{key:"valor",label:"Valor aplicado",type:"number",step:"0.01"},{key:"status",label:"Status",type:"select",options:["Ativo","Resgatado"]},{key:"dataResgate",label:"Data do resgate (se resgatado)",type:"date"},{key:"valorResgate",label:"Valor recebido no resgate (se resgatado)",type:"number",step:"0.01"},{key:"valorAtualManual",label:"Valor atual informado (opcional — vale no lugar da estimativa)",type:"number",step:"0.01",wide:true},{key:"rendAnual",label:"Rend.Anual",readOnly:true},{key:"rendMensal",label:"Rend.Mensal",readOnly:true},{key:"emissor",label:"Emissor"},{key:"banco",label:"Banco",type:"select",useBanks:true}];
+const RF_FIELDS=[{key:"dataInicio",label:"Data Início",type:"date"},{key:"dataVencimento",label:"Vencimento",type:"date"},{key:"tipo",label:"Tipo",type:"select",options:["CDB","CRA","CRI","LCI","LCA","Debênture","Tesouro Selic","Tesouro IPCA+","Tesouro Prefixado","LC","Outro"]},{key:"indexador",label:"Indexador",type:"select",options:["Pré","CDI","IPCA","Selic","IGPM","Outro"]},{key:"taxa",label:"Taxa (%)",type:"number",step:"0.01"},{key:"valor",label:"Valor aplicado",type:"number",step:"0.01"},{key:"status",label:"Status",type:"select",options:["Ativo","Resgatado"]},{key:"dataResgate",label:"Data do resgate (se resgatado)",type:"date"},{key:"valorResgate",label:"Valor recebido no resgate (se resgatado)",type:"number",step:"0.01"},{key:"valorAtualManual",label:"Valor atual informado (opcional — vale no lugar da estimativa)",type:"number",step:"0.01",wide:true},{key:"rendAnual",label:"Rend.Anual",readOnly:true},{key:"rendMensal",label:"Rend.Mensal",readOnly:true},{key:"irPct",label:"IR % (estimado)",readOnly:true},{key:"emissor",label:"Emissor"},{key:"banco",label:"Banco",type:"select",useBanks:true}];
 // Columns: Data, Venc, Tipo, Idx, TaxaNom, TaxaReal, Valor, Rend.Anual, Rend.Líq, Rend.Mensal, IR%, Emissor, Banco
-const RF_C=[{k:"dataInicio",l:"Data"},{k:"dataVencimento",l:"Venc."},{k:"tipo",l:"Tipo"},{k:"indexador",l:"Idx"},{k:"taxaNomLabel",l:"Taxa Nom."},{k:"taxaReal",l:"Taxa Real"},{k:"taxaRealMensal",l:"Tx Real/Mês"},{k:"valor",l:"Aplicado"},{k:"_atual",l:"Valor atual (est.)"},{k:"rendAnual",l:"Rend.Anual"},{k:"rendLiq",l:"Rend.Líq."},{k:"rendMensal",l:"Rend.Mensal"},{k:"irPct",l:"IR%"},{k:"emissor",l:"Emissor"},{k:"banco",l:"Banco"}];
+const RF_C=[{k:"dataInicio",l:"Data"},{k:"dataVencimento",l:"Venc."},{k:"tipo",l:"Tipo"},{k:"indexador",l:"Idx"},{k:"taxaNomLabel",l:"Taxa Nom."},{k:"taxaReal",l:"Taxa Real"},{k:"taxaRealMensal",l:"Tx Real/Mês"},{k:"valor",l:"Aplicado"},{k:"_atual",l:"Valor atual (est.)"},{k:"rendLiq",l:"Rend.Líq."},{k:"rendMensal",l:"Rend.Mensal"},{k:"emissor",l:"Emissor"}];
 
 function RFTab({data:dataAll,setData,banks,dashRetPct,rfCart}){const P=useT();const S=useS();const[sub,setSub]=useState("lista");const{sb,sd,onS,doS}=useSort("dataVencimento","asc");const[rebalVal,setRebalVal]=useState("");
   const[slIPCA,setSlIPCA]=useState(45);const[slCDI,setSlCDI]=useState(30);const[slPre,setSlPre]=useState(25);
@@ -511,7 +511,7 @@ function RFTab({data:dataAll,setData,banks,dashRetPct,rfCart}){const P=useT();co
     </div>)}
     {sub==="venc"&&(<div style={S.card}><div style={{fontSize:14,fontWeight:700,marginBottom:16}}>Vencimentos</div><VencSec title="⚠ Até 30d" items={v30} P={P}/><VencSec title="⏳ 30-180d" items={v180} P={P}/><VencSec title="✓ +180d" items={vP} P={P}/>{!data.length&&<div style={{color:P.textMuted,textAlign:"center",padding:20}}>Nenhum</div>}</div>)}
     {sub==="lista"&&(sorted.length===0?<div style={{textAlign:"center",padding:60,color:P.textMuted}}>Nenhum registro</div>:(
-    <div style={{...S.card,padding:0,overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr>{RF_C.map(c=>(<STH key={c.k} label={c.l} field={c.k} sb={sb} sd={sd} onS={onS} style={S.th}/>))}<th style={S.th}></th></tr></thead><tbody>{sorted.map(i=>{const d30=diasV(i.dataVencimento)<=30;const ic=IDX_COLORS[i.indexador]||IDX_COLORS.Outro;return(<TR key={i.id} baseBg={d30?"rgba(239,68,68,0.08)":undefined} onClick={()=>setModal(i)}>
+    <div style={{...S.card,padding:0,overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr>{RF_C.map(c=>(<STH key={c.k} label={c.l} field={c.k} sb={sb} sd={sd} onS={onS} style={S.th}/>))}<th style={S.th}></th></tr></thead><tbody>{sorted.map((i,ri)=>{const d30=diasV(i.dataVencimento)<=30;const ic=IDX_COLORS[i.indexador]||IDX_COLORS.Outro;return(<TR key={i.id} baseBg={d30?"rgba(239,68,68,0.12)":ri%2?"rgba(128,140,160,0.12)":undefined} onClick={()=>setModal(i)}>
       <td style={S.td}>{fD(i.dataInicio)}</td><td style={{...S.td,color:d30?P.red:P.text}}>{fD(i.dataVencimento)}</td>
       <td style={S.td}><span style={S.tag(P.blue,P.blueDim)}>{i.tipo||"—"}</span></td>
       <td style={S.td}><span style={{display:"inline-block",padding:"2px 8px",borderRadius:4,fontSize:11,fontWeight:600,color:ic.c,background:ic.bg}}>{i.indexador||"—"}</span></td>
@@ -520,21 +520,18 @@ function RFTab({data:dataAll,setData,banks,dashRetPct,rfCart}){const P=useT();co
       <td style={{...S.td,color:P.cyan}}>{i.taxaRealMensal?`${i.taxaRealMensal}%`:"—"}</td>
       <td style={S.td}>{fmt(i.valor)}</td>
       <td style={{...S.td,fontWeight:600}} title={i._at?`${i._at.fonte}${i._at.ir?` · IR est. ${fmt(i._at.ir)}`:""}`:""}>{fmt(i._atual)}{i._at&&i._at.rendPct!=null&&<span style={{fontSize:10,marginLeft:4,color:i._at.rend>=0?P.accent:P.red}}>{i._at.rendPct>=0?"+":""}{i._at.rendPct.toFixed(1)}%</span>}{i._at&&i._at.fonte==="manual"&&<span style={{fontSize:9,marginLeft:4,color:P.textMuted}}>manual</span>}</td>
-      <td style={{...S.td,color:P.accent}}>{fmt(i.rendAnual)}</td>
       <td style={{...S.td,color:P.accent,fontWeight:600}}>{fmt(i.rendLiq)}</td>
       <td style={{...S.td,color:P.accent}}>{fmt(i.rendMensal)}</td>
-      <td style={{...S.td,color:i.irPct>0?P.red:P.textMuted}}>{i.irPct>0?`${i.irPct}%`:"Isento"}</td>
-      <td style={S.td}>{i.emissor||"—"}</td><td style={S.td}>{i.banco||"—"}</td>
+      <td style={S.td}>{i.emissor||"—"}</td>
       <td style={S.td}><button style={{background:"transparent",border:"none",color:P.textMuted,cursor:"pointer",fontSize:16,fontFamily:"inherit"}} onClick={e=>{e.stopPropagation();setDel(i.id);}}>✕</button></td>
     </TR>);})}</tbody>
     <tfoot><tr>
       <td colSpan={7} style={{...S.td,fontWeight:700,borderBottom:"none"}}>TOTAL</td>
       <td style={{...S.td,fontWeight:700,borderBottom:"none"}}>{fmt(tV)}</td>
       <td style={{...S.td,fontWeight:700,borderBottom:"none"}}>{fmt(filtered.reduce((a,i)=>a+(Number(i._atual)||0),0))}</td>
-      <td style={{...S.td,fontWeight:700,color:P.accent,borderBottom:"none"}}>{fmt(tRA)}</td>
       <td style={{...S.td,fontWeight:700,color:P.accent,borderBottom:"none"}}>{fmt(tRL)}</td>
       <td style={{...S.td,fontWeight:700,color:P.accent,borderBottom:"none"}}>{fmt(tRM)}</td>
-      <td colSpan={4} style={{...S.td,borderBottom:"none"}}></td>
+      <td colSpan={2} style={{...S.td,borderBottom:"none"}}></td>
     </tr></tfoot>
     </table></div>))}
     {modal&&<Mdl title={modal==="new"?"Novo":"Editar"} fields={RF_FIELDS} initial={modal==="new"?{dataInicio:new Date().toISOString().slice(0,10)}:modal} autoFocus="dataInicio" onSave={doSave} onCancel={()=>setModal(null)} banks={banks}/>}

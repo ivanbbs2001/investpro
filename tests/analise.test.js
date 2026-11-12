@@ -44,3 +44,10 @@ test('reserva: média das despesas dos 3 meses fechados, sem Investimentos',()=>
 test('BCB: busca com erro não derruba',async()=>{
   const r=await A.anBuscarIndices(async u=>{if(u.includes("4391"))return{ok:true,json:async()=>[{data:"01/10/2026",valor:"1.1"}]};throw new Error("x");});expect(r.cdi["2026-10"]).toBe(1.1);expect(r.erros.length).toBe(1);
 });
+
+test('RF só entra no retorno quando os dois meses têm RF estimada; aportes RF descontados',()=>{
+  const snaps={"2026-10":{classes:{rf:1000,etfs:1000},total:2000,rfEst:true},"2026-11":{classes:{rf:1600,etfs:1000},total:2600,rfEst:true},"2026-09":{classes:{rf:900,etfs:1000},total:1900}};
+  const s=A.anSerie(snaps,{},{"2026-11":500});const nov=s.find(x=>x.ym==="2026-11"),out=s.find(x=>x.ym==="2026-10");
+  expect(nov.comRf).toBe(true);expect(nov.lucro).toBeCloseTo(100);        // (2600-2000)-500
+  expect(out.comRf).toBe(false);expect(out.lucro).toBeCloseTo(0);         // set sem rfEst: só ETFs (1000→1000)
+});

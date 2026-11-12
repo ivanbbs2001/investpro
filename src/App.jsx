@@ -5,6 +5,8 @@ import{etfAddDias,etfMeses,etfBuscarPrecos,etfMesclarFechamentos,etfMesesDesde,e
 import{fiiBuscarCotacoes,fiiMesclarCotacoes}from"./lib/fii.js";
 import{fsReal,entrarComGoogle,sair,observarLogin}from"./firebase.js";
 import{useCloudSync}from"./useCloudSync.js";
+import{rfCarteira}from"./lib/rf.js";
+import{getIR,temIR}from"./lib/rf.js";
 import{anClasses,anSnapshot,anUpsert,anMesclarSnaps,anFluxos,anSerie,anBuscarIndices,anAcumulado,anAlocacao,anAporte,anDespesaMedia,anReserva}from"./lib/analise.js";
 import{SYNC_LEGADO,syncTamanhoBytes,SYNC_LIMITE_BYTES}from"./lib/sync.js";
 const TC=createContext();const useT=()=>useContext(TC);
@@ -27,9 +29,7 @@ const fmt=v=>{if(v==null||v==="")return"—";const n=Number(v);return n.toLocale
 const fP=v=>(v!=null&&v!=="")?Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})+"%":"—";
 const fD=d=>{if(!d)return"—";const p=d.split("-");return`${p[2]}/${p[1]}/${p[0]}`;};
 const mL=d=>{if(!d)return"";const[y,m]=d.split("-");const ms=["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];return`${ms[parseInt(m)-1]}/${y}`;};
-function getIR(dias){if(dias<=180)return 22.5;if(dias<=360)return 20;if(dias<=720)return 17.5;return 15;}
 function diasV(dv){if(!dv)return 9999;return Math.max(0,Math.floor((new Date(dv)-new Date())/(864e5)));}
-function temIR(t){return["CDB","Tesouro Selic","Tesouro IPCA+","Tesouro Prefixado","Debênture","LC"].includes(t);}
 let RATES={cdi12m:14.15,ipca12m:4.5,igpm:3.5};
 async function fetchRates(){try{const[c,i]=await Promise.all([fetch("https://api.bcb.gov.br/dados/serie/bcdata.sgs.4392/dados/ultimos/1?formato=json").then(r=>r.ok?r.json():null),fetch("https://api.bcb.gov.br/dados/serie/bcdata.sgs.13522/dados/ultimos/1?formato=json").then(r=>r.ok?r.json():null)]);if(c&&c.length)RATES.cdi12m=Number(c[0].valor);if(i&&i.length)RATES.ipca12m=Number(i[0].valor);sv(SK.rates,RATES);}catch{}}
 
@@ -406,15 +406,16 @@ const extratoPdfRows=(linhas,ignorar=[])=>{
 function VencSec({title,items,P}){const[open,setOpen]=useState(false);const S=useS();if(!items.length)return null;const total=items.reduce((a,i)=>a+(Number(i.valor)||0),0);return(<div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:700,color:title.includes("30d")?P.red:title.includes("180")?P.yellow:P.accent,marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:8}} onClick={()=>setOpen(!open)}><span style={{fontSize:14}}>{open?"▼":"▶"}</span>{title} ({items.length}) — Total: {fmt(total)}</div>{open&&<div style={{display:"flex",gap:8,flexWrap:"wrap",paddingLeft:22}}>{items.map(i=>(<div key={i.id} style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:6,padding:"8px 12px",fontSize:11}}><b>{i.tipo||i.incorporadora||""}</b> {i.emissor||i.empreendimento||""} — {fmt(i.valor)} — {fD(i.dataVencimento)} ({diasV(i.dataVencimento)}d)</div>))}</div>}</div>);}
 
 /* ═══ RF — columns reordered: ...Valor, Rend.Anual, Rend.Líq, Rend.Mensal, IR%, ... + 3 pie charts ═══ */
-const RF_FIELDS=[{key:"dataInicio",label:"Data Início",type:"date"},{key:"dataVencimento",label:"Vencimento",type:"date"},{key:"tipo",label:"Tipo",type:"select",options:["CDB","CRA","CRI","LCI","LCA","Debênture","Tesouro Selic","Tesouro IPCA+","Tesouro Prefixado","LC","Outro"]},{key:"indexador",label:"Indexador",type:"select",options:["Pré","CDI","IPCA","Selic","IGPM","Outro"]},{key:"taxa",label:"Taxa (%)",type:"number",step:"0.01"},{key:"valor",label:"Valor",type:"number",step:"0.01"},{key:"rendAnual",label:"Rend.Anual",readOnly:true},{key:"rendMensal",label:"Rend.Mensal",readOnly:true},{key:"emissor",label:"Emissor"},{key:"banco",label:"Banco",type:"select",useBanks:true}];
+const RF_FIELDS=[{key:"dataInicio",label:"Data Início",type:"date"},{key:"dataVencimento",label:"Vencimento",type:"date"},{key:"tipo",label:"Tipo",type:"select",options:["CDB","CRA","CRI","LCI","LCA","Debênture","Tesouro Selic","Tesouro IPCA+","Tesouro Prefixado","LC","Outro"]},{key:"indexador",label:"Indexador",type:"select",options:["Pré","CDI","IPCA","Selic","IGPM","Outro"]},{key:"taxa",label:"Taxa (%)",type:"number",step:"0.01"},{key:"valor",label:"Valor aplicado",type:"number",step:"0.01"},{key:"valorAtualManual",label:"Valor atual informado (opcional — vale no lugar da estimativa)",type:"number",step:"0.01",wide:true},{key:"rendAnual",label:"Rend.Anual",readOnly:true},{key:"rendMensal",label:"Rend.Mensal",readOnly:true},{key:"emissor",label:"Emissor"},{key:"banco",label:"Banco",type:"select",useBanks:true}];
 // Columns: Data, Venc, Tipo, Idx, TaxaNom, TaxaReal, Valor, Rend.Anual, Rend.Líq, Rend.Mensal, IR%, Emissor, Banco
-const RF_C=[{k:"dataInicio",l:"Data"},{k:"dataVencimento",l:"Venc."},{k:"tipo",l:"Tipo"},{k:"indexador",l:"Idx"},{k:"taxaNomLabel",l:"Taxa Nom."},{k:"taxaReal",l:"Taxa Real"},{k:"taxaRealMensal",l:"Tx Real/Mês"},{k:"valor",l:"Valor"},{k:"rendAnual",l:"Rend.Anual"},{k:"rendLiq",l:"Rend.Líq."},{k:"rendMensal",l:"Rend.Mensal"},{k:"irPct",l:"IR%"},{k:"emissor",l:"Emissor"},{k:"banco",l:"Banco"}];
+const RF_C=[{k:"dataInicio",l:"Data"},{k:"dataVencimento",l:"Venc."},{k:"tipo",l:"Tipo"},{k:"indexador",l:"Idx"},{k:"taxaNomLabel",l:"Taxa Nom."},{k:"taxaReal",l:"Taxa Real"},{k:"taxaRealMensal",l:"Tx Real/Mês"},{k:"valor",l:"Aplicado"},{k:"_atual",l:"Valor atual (est.)"},{k:"rendAnual",l:"Rend.Anual"},{k:"rendLiq",l:"Rend.Líq."},{k:"rendMensal",l:"Rend.Mensal"},{k:"irPct",l:"IR%"},{k:"emissor",l:"Emissor"},{k:"banco",l:"Banco"}];
 
-function RFTab({data,setData,banks,dashRetPct}){const P=useT();const S=useS();const[sub,setSub]=useState("lista");const{sb,sd,onS,doS}=useSort("dataVencimento","asc");const[rebalVal,setRebalVal]=useState("");
+function RFTab({data,setData,banks,dashRetPct,rfCart}){const P=useT();const S=useS();const[sub,setSub]=useState("lista");const{sb,sd,onS,doS}=useSort("dataVencimento","asc");const[rebalVal,setRebalVal]=useState("");
   const[slIPCA,setSlIPCA]=useState(45);const[slCDI,setSlCDI]=useState(30);const[slPre,setSlPre]=useState(25);
   const[aporteProj,setAporteProj]=useState("");const[hovProj1,setHovProj1]=useState(null);const[hovProj2,setHovProj2]=useState(null);
   const[rfFiltroTipo,setRfFiltroTipo]=useState("");const[rfFiltroIdx,setRfFiltroIdx]=useState("");
-  const enriched=data.map(i=>({...i,...calcRF(i)}));
+  const rfMap=useMemo(()=>{const m={};((rfCart&&rfCart.itens)||[]).forEach(x=>{m[x.id]=x;});return m;},[rfCart]);
+  const enriched=data.map(i=>({...i,...calcRF(i),_atual:(rfMap[i.id]||{valor:Number(i.valor)||0}).valor,_at:rfMap[i.id]}));
   const filtered=enriched.filter(i=>{if(rfFiltroTipo&&i.tipo!==rfFiltroTipo)return false;if(rfFiltroIdx&&i.indexador!==rfFiltroIdx)return false;return true;});
   const sorted=doS(filtered);
   const tiposUnicos=[...new Set(data.map(i=>i.tipo).filter(Boolean))].sort();
@@ -516,6 +517,7 @@ function RFTab({data,setData,banks,dashRetPct}){const P=useT();const S=useS();co
       <td style={{...S.td,color:P.cyan}}>{i.taxaReal!=="—"?`${i.taxaReal}%`:"—"}</td>
       <td style={{...S.td,color:P.cyan}}>{i.taxaRealMensal?`${i.taxaRealMensal}%`:"—"}</td>
       <td style={S.td}>{fmt(i.valor)}</td>
+      <td style={{...S.td,fontWeight:600}} title={i._at?`${i._at.fonte}${i._at.ir?` · IR est. ${fmt(i._at.ir)}`:""}`:""}>{fmt(i._atual)}{i._at&&i._at.rendPct!=null&&<span style={{fontSize:10,marginLeft:4,color:i._at.rend>=0?P.accent:P.red}}>{i._at.rendPct>=0?"+":""}{i._at.rendPct.toFixed(1)}%</span>}{i._at&&i._at.fonte==="manual"&&<span style={{fontSize:9,marginLeft:4,color:P.textMuted}}>manual</span>}</td>
       <td style={{...S.td,color:P.accent}}>{fmt(i.rendAnual)}</td>
       <td style={{...S.td,color:P.accent,fontWeight:600}}>{fmt(i.rendLiq)}</td>
       <td style={{...S.td,color:P.accent}}>{fmt(i.rendMensal)}</td>
@@ -526,6 +528,7 @@ function RFTab({data,setData,banks,dashRetPct}){const P=useT();const S=useS();co
     <tfoot><tr>
       <td colSpan={7} style={{...S.td,fontWeight:700,borderBottom:"none"}}>TOTAL</td>
       <td style={{...S.td,fontWeight:700,borderBottom:"none"}}>{fmt(tV)}</td>
+      <td style={{...S.td,fontWeight:700,borderBottom:"none"}}>{fmt(filtered.reduce((a,i)=>a+(Number(i._atual)||0),0))}</td>
       <td style={{...S.td,fontWeight:700,color:P.accent,borderBottom:"none"}}>{fmt(tRA)}</td>
       <td style={{...S.td,fontWeight:700,color:P.accent,borderBottom:"none"}}>{fmt(tRL)}</td>
       <td style={{...S.td,fontWeight:700,color:P.accent,borderBottom:"none"}}>{fmt(tRM)}</td>
@@ -1177,11 +1180,9 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
 }
 
 /* CONFIG */
-function AnaliseTab({e,snaps,alvos,setAlvos,reservaIds,setReservaIds}){const P=useT();const S=useS();const hoje=localISO(new Date());
-  const[idx,setIdx]=useState(()=>ld("ip8-bcb",null));const[idxLoad,setIdxLoad]=useState(false);const[aporte,setAporte]=useState("");
-  const cls=anClasses(e);const serie=anSerie(snaps,anFluxos(e));const serieDesc=[...serie].reverse();
-  const buscar=async()=>{setIdxLoad(true);const r=await anBuscarIndices();const novo={cdi:Object.keys(r.cdi).length?r.cdi:(idx&&idx.cdi)||{},ipca:Object.keys(r.ipca).length?r.ipca:(idx&&idx.ipca)||{},erro:r.erros.join(" · ")||null,em:r.erros.length<2?new Date().toISOString():(idx&&idx.em)||null};setIdx(novo);sv("ip8-bcb",novo);setIdxLoad(false);};
-  useEffect(()=>{if(!idx||!idx.em||Date.now()-new Date(idx.em).getTime()>864e5)buscar();},[]);// eslint-disable-line
+function AnaliseTab({e,snaps,alvos,setAlvos,reservaIds,setReservaIds,idx,idxLoad,buscar}){const P=useT();const S=useS();const hoje=localISO(new Date());
+  const[aporte,setAporte]=useState("");
+  const cls=anClasses(e);const serie=anSerie(snaps,anFluxos(e),e.rfFluxos);const serieDesc=[...serie].reverse();
   const acum=idx?anAcumulado(serie,idx.cdi,idx.ipca):anAcumulado(serie,null,null);
   const al=anAlocacao(cls,alvos);const sug=anAporte(cls,alvos,Number(aporte)||0);
   const desp=anDespesaMedia(e.orc,hoje);const ids=reservaIds;const res=anReserva(e.rf,ids,desp.media);const sel=new Set(ids==null?res.itens.map(i=>i.id):ids);
@@ -1196,9 +1197,9 @@ function AnaliseTab({e,snaps,alvos,setAlvos,reservaIds,setReservaIds}){const P=u
       {serie.length===0?<div style={{fontSize:12,color:P.textMuted}}>O primeiro registro é criado automaticamente ao abrir o app com dados lançados.</div>:<div>
         <div style={{display:"flex",alignItems:"flex-end",gap:6,height:90,marginBottom:12}}>{serie.slice(-24).map(s=>(<div key={s.ym} title={`${s.ym}: ${fmt(s.total)}`} style={{flex:1,maxWidth:40,background:P.accent,opacity:0.85,height:Math.max(3,s.total/maxT*90),borderRadius:"3px 3px 0 0"}}/>))}</div>
         <div style={{maxHeight:300,overflow:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>{["Mês","Patrimônio","Variação","Var. %"].map(x=><th key={x} style={S.th}>{x}</th>)}</tr></thead><tbody>{serieDesc.map(s=>(<tr key={s.ym}><td style={S.td}>{s.ym.slice(5)}/{s.ym.slice(0,4)}</td><td style={S.td}>{fmt(s.total)}</td><td style={{...S.td,color:cor(s.delta)}}>{s.delta==null?"—":fmt(s.delta)}</td><td style={{...S.td,color:cor(s.deltaPct)}}>{pc(s.deltaPct)}</td></tr>))}</tbody></table></div></div>}
-      <div style={{fontSize:10,color:P.textMuted,marginTop:8,lineHeight:1.5}}>Cada mês guarda o último valor visto enquanto o app estava aberto (não o fechamento exato do mês). ETFs, FIIs e cripto entram a mercado; renda fixa, INCO, tesouro e ações ficam ao valor lançado/custo. A variação inclui aportes.</div></div>
+      <div style={{fontSize:10,color:P.textMuted,marginTop:8,lineHeight:1.5}}>Cada mês guarda o último valor visto enquanto o app estava aberto (não o fechamento exato do mês). ETFs, FIIs, cripto e renda fixa (valor estimado na curva) entram a mercado; INCO, tesouro e ações ficam ao valor lançado/custo. A variação inclui aportes.</div></div>
 
-    <div style={{...S.card,marginBottom:20}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={h()}>Retorno da carteira a mercado (ETFs + FIIs + Cripto) × CDI e IPCA</div><button style={S.btnO} disabled={idxLoad} onClick={buscar}>{idxLoad?"…":"↻ CDI/IPCA"}</button></div>
+    <div style={{...S.card,marginBottom:20}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={h()}>Retorno da carteira a mercado (ETFs + FIIs + Cripto; + Renda Fixa estimada a partir do 2º mês com RF) × CDI e IPCA</div><button style={S.btnO} disabled={idxLoad} onClick={buscar}>{idxLoad?"…":"↻ CDI/IPCA"}</button></div>
       {idx&&idx.erro&&<div style={{fontSize:11,color:P.red,marginBottom:8}}>⚠ {idx.erro}</div>}
       {acum?<div style={{display:"flex",gap:24,flexWrap:"wrap",fontSize:13,marginBottom:12}}><span>Carteira: <b style={{color:cor(acum.carteira)}}>{pc(acum.carteira)}</b></span><span>CDI: <b>{pc(acum.cdi)}</b></span><span>IPCA: <b>{pc(acum.ipca)}</b></span><span style={{color:P.textMuted}}>{acum.meses} mês(es) com cálculo</span></div>:<div style={{fontSize:12,color:P.textMuted,marginBottom:8}}>Precisa de pelo menos dois meses seguidos de registro para calcular o retorno.</div>}
       {serie.some(s=>s.retorno!=null)&&<table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>{["Mês","Valor a mercado","Aportes líquidos","Lucro","Retorno","CDI","IPCA"].map(x=><th key={x} style={S.th}>{x}</th>)}</tr></thead><tbody>{serieDesc.filter(s=>s.retorno!=null).map(s=>(<tr key={s.ym}><td style={S.td}>{s.ym.slice(5)}/{s.ym.slice(0,4)}</td><td style={S.td}>{fmt(s.mercado)}</td><td style={S.td}>{fmt(s.fluxo)}</td><td style={{...S.td,color:cor(s.lucro)}}>{fmt(s.lucro)}</td><td style={{...S.td,color:cor(s.retorno),fontWeight:600}}>{pc(s.retorno)}</td><td style={S.td}>{idx&&idx.cdi&&idx.cdi[s.ym]!=null?pc(idx.cdi[s.ym]):"—"}</td><td style={S.td}>{idx&&idx.ipca&&idx.ipca[s.ym]!=null?pc(idx.ipca[s.ym]):"—"}</td></tr>))}</tbody></table>}
@@ -2320,13 +2321,13 @@ function ProjecoesTab({tG,tRM,retPct,orc,sim,setSim,defSim}){const P=useT();cons
 }
 
 /* DASHBOARD with pie charts */
-function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc,cotCr,crBase,setCrBase,fxUsd}){const P=useT();const S=useS();
+function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc,cotCr,crBase,setCrBase,fxUsd,rfCart}){const P=useT();const S=useS();
   const[hovEvo,setHovEvo]=useState(null);
   const[dashMes,setDashMes]=useState(()=>`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`);
   const[hovCat,setHovCat]=useState(null);
   const dashMesPrev=()=>{const[y,m]=dashMes.split("-").map(Number);const d=new Date(y,m-2,1);setDashMes(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);};
   const dashMesNext=()=>{const[y,m]=dashMes.split("-").map(Number);const d=new Date(y,m,1);setDashMes(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);};
-  const tRF=rf.reduce((a,i)=>a+(Number(i.valor)||0),0);const rfE=rf.map(i=>({...i,...calcRF(i)}));const mRF=rfE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
+  const tRF=crBase==="mercado"&&rfCart?rfCart.valor:rf.reduce((a,i)=>a+(Number(i.valor)||0),0);const rfE=rf.map(i=>({...i,...calcRF(i)}));const mRF=rfE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
   const tIN=inco.reduce((a,i)=>a+(Number(i.valor)||0),0);const inE=inco.map(i=>({...i,...calcINCO(i)}));const mIN=inE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
   const tAc=ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0);
   const tEt=etfs.reduce((a,i)=>a+etfCustoBRL(i,fxUsd),0);
@@ -2456,7 +2457,7 @@ function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc,cotCr,crBase,setCrBase,fxUsd}
     </div>
 
     {/* Pie charts + Benchmark */}
-    {tG>0&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}><div style={{...S.card,padding:24}}><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Valor Investido <span style={{textTransform:"none",fontWeight:500}}>(cripto a {crBase==="custo"?"custo":"mercado"} · <span style={{cursor:"pointer",color:P.accent}} onClick={()=>setCrBase(crBase==="custo"?"mercado":"custo")}>alternar</span>)</span></div><Pie data={patD} size={220}/></div>{tRM>0&&<div style={{...S.card,padding:24}}><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Renda Mensal</div><Pie data={renD} size={220}/></div>}</div>)}
+    {tG>0&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}><div style={{...S.card,padding:24}}><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Valor Investido <span style={{textTransform:"none",fontWeight:500}}>(cripto e renda fixa a {crBase==="custo"?"custo":"mercado/estimado"} · <span style={{cursor:"pointer",color:P.accent}} onClick={()=>setCrBase(crBase==="custo"?"mercado":"custo")}>alternar</span>)</span></div><Pie data={patD} size={220}/></div>{tRM>0&&<div style={{...S.card,padding:24}}><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Renda Mensal</div><Pie data={renD} size={220}/></div>}</div>)}
     {tG>0&&<BenchmarkPanel tG={tG} retPctAnual={retPct*12} P={P} S={S}/>}
     {tG>0&&<LiquidezPanel rf={rf} inco={inco} P={P} S={S}/>}
     {indices.some(i=>i.valor)&&(<div style={S.card}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",color:P.textDim,marginBottom:14}}>Índices</div><div style={{display:"flex",flexWrap:"wrap",gap:14}}>{indices.filter(i=>i.valor).map(i=>(<div key={i.nome} style={{minWidth:100}}><div style={{fontSize:10,color:P.textMuted}}>{i.nome}</div><div style={{fontSize:14,fontWeight:700}}>{i.unidade==="R$"?fmt(i.valor):fP(i.valor)}</div></div>))}</div></div>)}
@@ -2477,6 +2478,9 @@ export default function App(){
   const[etfHist,setEtfHist]=useState(()=>ld(SK.etfHist,{}));const[fxUsd,setFxUsd]=useState(()=>ld(SK.fxUsd,{atual:null,dia:{},desde:null,ultimaOK:null,erro:null}));const[fxLoading,setFxLoading]=useState(false);const fxRef=useRef({etfs:[],fx:null,busy:false});fxRef.current.etfs=etfs;fxRef.current.fx=fxUsd;
   const[cotCr,setCotCr]=useState(()=>ld(SK.cotCr,{quotes:{},ultimaOK:null,ultimaTentativa:null,erro:null}));const[crBase,setCrBase]=useState(()=>ld(SK.crBase,"mercado"));const[crLoading,setCrLoading]=useState(false);
   const crRef=useRef({cr:[],cot:null,busy:false});crRef.current.cr=cr;crRef.current.cot=cotCr;
+  const[bcb,setBcb]=useState(()=>ld("ip8-bcb",null));const[bcbLoad,setBcbLoad]=useState(false);
+  const bcbBuscar=async()=>{setBcbLoad(true);const r=await anBuscarIndices(undefined,120);setBcb(a=>{const novo={cdi:Object.keys(r.cdi).length?r.cdi:(a&&a.cdi)||{},ipca:Object.keys(r.ipca).length?r.ipca:(a&&a.ipca)||{},erro:r.erros.join(" · ")||null,em:r.erros.length<2?new Date().toISOString():(a&&a.em)||null};sv("ip8-bcb",novo);return novo;});setBcbLoad(false);};
+  useEffect(()=>{if(!bcb||!bcb.em||Date.now()-new Date(bcb.em).getTime()>864e5||Object.keys(bcb.cdi||{}).length<100)bcbBuscar();},[]);// eslint-disable-line
   const[indices,setIndices]=useState(()=>ld(SK.ind,DEF_IND));
   const[prfRef,setPrfRef]=useState(()=>ld(SK.prfRef,DEF_PRF_REF));
   const[aportes,setAportes]=useState(()=>ld(SK.ap,[]));const[orc,setOrc]=useState(()=>ld(SK.orc,[]));
@@ -2523,12 +2527,13 @@ export default function App(){
   // Login/logout functions
 
   // Calculate monthly return % for SimTab
+  const hojeD=localISO(new Date());const rfCart=useMemo(()=>rfCarteira(rf,{cdi:bcb&&bcb.cdi,ipca:bcb&&bcb.ipca,cdi12m:RATES.cdi12m,ipca12m:RATES.ipca12m,igpm:RATES.igpm},hojeD),[rf,bcb,hojeD]);
   const _rfE=rf.map(i=>({...i,...calcRF(i)})),_mRF=_rfE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
   const _inE=inco.map(i=>({...i,...calcINCO(i)})),_mIN=_inE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
   const _dFi=fiis.reduce((a,i)=>a+(Number(i.dividendoMensal)||0),0);
-  const _tG=rf.reduce((a,i)=>a+(Number(i.valor)||0),0)+inco.reduce((a,i)=>a+(Number(i.valor)||0),0)+ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+etfs.reduce((a,i)=>a+etfCustoBRL(i,fxUsd),0)+fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+crPatrimonio(cr,cotCr,crBase);
+  const _tG=(crBase==="mercado"?rfCart.valor:rf.reduce((a,i)=>a+(Number(i.valor)||0),0))+inco.reduce((a,i)=>a+(Number(i.valor)||0),0)+ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+etfs.reduce((a,i)=>a+etfCustoBRL(i,fxUsd),0)+fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+crPatrimonio(cr,cotCr,crBase);
   const _tRM=_mRF+_mIN+_dFi;const _retPct=_tG>0?((_tRM/_tG)*100):0;
-  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rf} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc} cotCr={cotCr} crBase={crBase} setCrBase={setCrBase} fxUsd={fxUsd}/>;case"comp":return<CompTab/>;case"ana":return<AnaliseTab e={{rf,inco,ac,etfs,fiis,cr,tdApos,tdLiza,orc,cotCr,fx:fxUsd,fiiCot:ld("ip8-fiiCot",null)}} snaps={snaps} alvos={alvos} setAlvos={setAlvos} reservaIds={reservaIds} setReservaIds={setReservaIds}/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"proj":return<ProjecoesTab tG={_tG} tRM={_tRM} retPct={_retPct} orc={orc} sim={simProj} setSim={setSimProj} defSim={DEF_SIM_PROJ}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"td":return<TDTab apos={tdApos} setApos={setTdApos} liza={tdLiza} setLiza={setTdLiza}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs} hist={etfHist} setHist={setEtfHist} fx={fxUsd} onFxRefresh={fxRefresh} fxLoading={fxLoading}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr} cot={cotCr} base={crBase} setBase={setCrBase} onRefresh={crRefresh} loading={crLoading}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rf} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef} sim={simPrf} setSim={setSimPrf} defSim={DEF_SIM_PRF}/>;case"imoveis":return<ImoveisTab sim={simImo} setSim={setSimImo} defSim={DEF_SIM_IMO}/>;case"cfg":return<div><NuvemPanel sync={sync} authUser={authUser} onLogin={onLogin} onLogout={()=>sair()} loginErro={loginErro} bytes={syncTamanhoBytes(nuvemPayload)} legado={syncUid===SYNC_LEGADO}/><CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/></div>;default:return null;}};
+  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rf} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc} cotCr={cotCr} crBase={crBase} setCrBase={setCrBase} fxUsd={fxUsd} rfCart={rfCart}/>;case"comp":return<CompTab/>;case"ana":return<AnaliseTab e={{rf,inco,ac,etfs,fiis,cr,tdApos,tdLiza,orc,cotCr,fx:fxUsd,fiiCot:ld("ip8-fiiCot",null),rfValor:rfCart.valor,rfFluxos:rfCart.fluxos}} idx={bcb} idxLoad={bcbLoad} buscar={bcbBuscar} snaps={snaps} alvos={alvos} setAlvos={setAlvos} reservaIds={reservaIds} setReservaIds={setReservaIds}/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"proj":return<ProjecoesTab tG={_tG} tRM={_tRM} retPct={_retPct} orc={orc} sim={simProj} setSim={setSimProj} defSim={DEF_SIM_PROJ}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct} rfCart={rfCart}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"td":return<TDTab apos={tdApos} setApos={setTdApos} liza={tdLiza} setLiza={setTdLiza}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs} hist={etfHist} setHist={setEtfHist} fx={fxUsd} onFxRefresh={fxRefresh} fxLoading={fxLoading}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr} cot={cotCr} base={crBase} setBase={setCrBase} onRefresh={crRefresh} loading={crLoading}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rf} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef} sim={simPrf} setSim={setSimPrf} defSim={DEF_SIM_PRF}/>;case"imoveis":return<ImoveisTab sim={simImo} setSim={setSimImo} defSim={DEF_SIM_IMO}/>;case"cfg":return<div><NuvemPanel sync={sync} authUser={authUser} onLogin={onLogin} onLogout={()=>sair()} loginErro={loginErro} bytes={syncTamanhoBytes(nuvemPayload)} legado={syncUid===SYNC_LEGADO}/><CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/></div>;default:return null;}};
   const isDarkSidebar=P.sidebarBg&&parseInt(P.sidebarBg.replace("#",""),16)<0x888888;
   const sbText=isDarkSidebar?"#e8e0d6":P.text;const sbTextDim=isDarkSidebar?"#a09890":P.textDim;const sbTextMuted=isDarkSidebar?"#6b635a":P.textMuted;const sbHover=isDarkSidebar?"rgba(255,255,255,0.08)":P.hover;const sbAccentGlow=isDarkSidebar?"rgba(196,98,42,0.20)":P.accentGlow;
   function SBItem({t}){const[h,setH]=useState(false);const active=tab===t.id;return(<div onClick={()=>setTab(t.id)} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 16px",cursor:"pointer",fontSize:12,fontWeight:active?600:400,color:active?P.accent:h?sbText:sbTextDim,background:active?sbAccentGlow:h?sbHover:"transparent",borderRight:active?`2px solid ${P.accent}`:"2px solid transparent",transition:"all 0.2s ease",borderRadius:h&&!active?"6px 0 0 6px":"0",transform:h&&!active?"translateX(4px)":"none"}}><span style={{fontSize:14,opacity:active?1:h?1:0.7,transition:"all 0.2s ease"}}>{t.ic}</span>{t.l}</div>);}

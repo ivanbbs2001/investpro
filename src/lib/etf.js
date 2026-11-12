@@ -61,3 +61,17 @@ export const etfBuscarFx=async(desde,hoje,fetchFn)=>{
 export const etfMesclarFx=(prev,res,desde,agoraISO)=>{const b={atual:null,dia:{},desde:null,ultimaOK:null,erro:null,...(prev||{})};
   const dia={...b.dia,...res.dia};const novo=res.atual!=null||Object.keys(res.dia).length>0;
   return{atual:res.atual!=null?res.atual:b.atual,dia,desde:!res.erros.some(e=>e.startsWith("histórico"))&&desde?(b.desde&&b.desde<desde?b.desde:desde):b.desde,ultimaOK:novo?agoraISO:b.ultimaOK,ultimaTentativa:agoraISO,erro:res.erros.length?res.erros.join(" · "):null};};
+/* ===== Preços de ETFs/ações no exterior via Twelve Data (plano gratuito: chave própria, 8 req/min) ===== */
+export const etfParseTD=j=>{if(!j||j.status==="error"||!Array.isArray(j.values))return{erro:(j&&j.message)||"resposta inesperada"};
+  const meses={};let ult=null,ultEm="";j.values.forEach(x=>{const c=Number(x.close),d=String(x.datetime||"");if(!(c>0)||!/^\d{4}-\d{2}/.test(d))return;meses[d.slice(0,7)]=c;if(d>ultEm){ultEm=d;ult=c;}});
+  return Object.keys(meses).length?{meses,ultimo:ult,ultimoEm:ultEm}:{erro:"sem dados"};};
+export const etfBuscarPrecos=async(tickers,chave,fetchFn)=>{const f=fetchFn||((...a)=>fetch(...a));const precos={},erros=[];
+  if(!chave)return{precos,erros:["informe a chave da Twelve Data (gratuita)"]};
+  const lista=[...new Set((tickers||[]).map(t=>String(t||"").trim().toUpperCase()).filter(Boolean))].slice(0,7);
+  if((tickers||[]).length>7)erros.push("limite de 8 consultas por minuto: só os 7 primeiros tickers foram buscados");
+  for(const t of lista){try{const j=await crFetchJSON(f,`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(t)}&interval=1month&outputsize=60&apikey=${encodeURIComponent(chave)}`);
+      const p=etfParseTD(j);if(p.erro){erros.push(t+": "+p.erro);if(j&&(j.code===401||j.code===429))break;}else precos[t]=p;}
+    catch(e){erros.push(t+": "+String((e&&e.message)||e));if(/HTTP (401|429)/.test(String(e&&e.message)))break;}}
+  return{precos,erros};};
+/* Aplica no histórico só os meses FECHADOS que ainda não têm valor (não sobrescreve o que você digitou) */
+export const etfMesclarFechamentos=(hist,precos,hojeYM)=>{const out={...(hist||{})};Object.entries(precos).forEach(([t,p])=>{const h={...(out[t]||{})};Object.entries(p.meses).forEach(([m,c])=>{if(m<hojeYM&&!(Number(h[m])>0))h[m]=String(c);});out[t]=h;});return out;};

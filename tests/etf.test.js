@@ -34,3 +34,12 @@ await (async()=>{const mk=m=>async url=>{for(const k in m){if(url.includes(k)){i
  })()
 
 });
+import{etfParseTD,etfBuscarPrecos,etfMesclarFechamentos}from'../src/lib/etf.js';
+test('Twelve Data: parse, busca e mescla sem sobrescrever o digitado',async()=>{
+  const ok={status:"ok",values:[{datetime:"2026-11-11",close:"738.68"},{datetime:"2026-10-01",close:"700.5"},{datetime:"2026-09-01",close:"690"}]};
+  const p=etfParseTD(ok);expect(p.ultimo).toBe(738.68);expect(p.meses["2026-10"]).toBe(700.5);expect(etfParseTD({status:"error",message:"bad key"}).erro).toBe("bad key");
+  let calls=0;const r=await etfBuscarPrecos(["ivv","BLK"],"K",async u=>{calls++;if(u.includes("BLK"))return{ok:true,json:async()=>({code:429,status:"error",message:"limite"})};return{ok:true,json:async()=>ok};});
+  expect(r.precos.IVV.ultimo).toBe(738.68);expect(r.erros[0]).toContain("BLK");expect(calls).toBe(2);
+  expect((await etfBuscarPrecos(["IVV"],"",async()=>{throw new Error("x");})).erros[0]).toContain("chave");
+  const h=etfMesclarFechamentos({IVV:{"2026-09":"111"}},r.precos,"2026-11");expect(h.IVV["2026-09"]).toBe("111");expect(h.IVV["2026-10"]).toBe("700.5");expect(h.IVV["2026-11"]).toBeUndefined();
+});

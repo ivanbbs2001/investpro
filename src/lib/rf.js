@@ -12,7 +12,9 @@ export const rfFatorSerie=(serie,de,ate,f,falta)=>{const a=ymdToUTC(de),b=ymdToU
     const r=serie&&serie[m]!=null?serie[m]:falta;fator*=Math.pow(1+f(r),frac);}return fator;};
 const mensalDeAnual=aa=>(Math.pow(1+aa/100,1/12)-1)*100;
 /* ctx: {cdi,ipca (séries mensais do BCB), cdi12m, ipca12m, igpm (% a.a.)} */
+export const rfResgatado=i=>!!i&&i.status==="Resgatado";
 export const rfValorAtual=(item,ctx,hojeISO)=>{
+  if(rfResgatado(item))return{valor:0,aplicado:0,rend:0,rendPct:null,ir:0,fonte:"resgatado"};
   const valor=Number(item.valor)||0,manual=Number(item.valorAtualManual)||0;
   if(manual>0)return{valor:manual,aplicado:valor,rend:manual-valor,rendPct:valor>0?(manual/valor-1)*100:null,ir:null,fonte:"manual"};
   const t=Number(item.taxa)||0;if(!(valor>0)||!(t>0)||!item.dataInicio||item.dataInicio>=hojeISO)return{valor,aplicado:valor,rend:0,rendPct:null,ir:0,fonte:"aplicado"};
@@ -24,8 +26,11 @@ export const rfValorAtual=(item,ctx,hojeISO)=>{
   else fator=Math.pow(1+t/100,dias/365);                      // Pré e demais: taxa anual composta
   const bruto=valor*fator,rend=bruto-valor,ir=temIR(item.tipo)?rend*getIR(dias)/100:0,liq=bruto-ir;
   return{valor:liq,aplicado:valor,bruto,rend:liq-valor,rendPct:(liq/valor-1)*100,ir,fonte};};
-/* fluxos: aportes por mês de início (R$) — usados no retorno da Análise */
-export const rfCarteira=(rf,ctx,hojeISO)=>{const itens=(rf||[]).map(i=>({id:i.id,...rfValorAtual(i,ctx,hojeISO)}));const fluxos={};
-  (rf||[]).forEach(i=>{const v=Number(i.valor)||0;if(v>0&&/^\d{4}-\d{2}/.test(i.dataInicio||"")){const m=i.dataInicio.slice(0,7);fluxos[m]=(fluxos[m]||0)+v;}});
-  return{valor:itens.reduce((a,x)=>a+x.valor,0),aplicado:itens.reduce((a,x)=>a+x.aplicado,0),itens,fluxos};};
+/* fluxos: aportes (+) pelo mês de início e resgates (−) pelo mês do resgate, em R$ — usados no retorno da Análise.
+   Resgate sem valor informado: usa a estimativa na data do resgate. */
+export const rfFluxos=(rf,ctx)=>{const f={},add=(d,v)=>{if(/^\d{4}-\d{2}/.test(d||"")&&isFinite(v)&&v){const m=d.slice(0,7);f[m]=(f[m]||0)+v;}};
+  (rf||[]).forEach(i=>{const v=Number(i.valor)||0;if(v>0)add(i.dataInicio,v);
+    if(rfResgatado(i)){let r=Number(i.valorResgate)||0;if(!(r>0)&&i.dataResgate)r=rfValorAtual({...i,status:"Ativo",valorAtualManual:""},ctx,i.dataResgate).valor;if(r>0)add(i.dataResgate,-r);}});return f;};
+export const rfCarteira=(rf,ctx,hojeISO)=>{const itens=(rf||[]).map(i=>({id:i.id,...rfValorAtual(i,ctx,hojeISO)}));
+  return{valor:itens.reduce((a,x)=>a+x.valor,0),aplicado:itens.reduce((a,x)=>a+x.aplicado,0),itens,fluxos:rfFluxos(rf,ctx)};};
 export const rfPatrimonio=(rf,ctx,base,hojeISO)=>{const c=rfCarteira(rf,ctx,hojeISO);return base==="custo"?c.aplicado:c.valor;};

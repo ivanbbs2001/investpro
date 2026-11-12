@@ -32,3 +32,12 @@ test('carteira e base custo×atual',()=>{
   const rf=[{id:"1",valor:"1000",taxa:"10",indexador:"Pré",tipo:"LCI",dataInicio:"2025-11-12"},{id:"2",valor:"500"}];
   near(rfPatrimonio(rf,{}, "custo","2026-11-12"),1500);near(rfPatrimonio(rf,{}, "mercado","2026-11-12"),1100+500);expect(rfCarteira(rf,{}, "2026-11-12").itens.length).toBe(2);
 });
+
+import{rfFluxos,rfResgatado}from'../src/lib/rf.js';
+test('resgatado sai do patrimônio; fluxos: aporte (+) no início e resgate (−) na data',()=>{
+  const rf=[{id:"1",valor:"1000",taxa:"10",indexador:"Pré",tipo:"LCI",dataInicio:"2025-11-12",status:"Resgatado",dataResgate:"2026-05-20",valorResgate:"1070"},{id:"2",valor:"500",dataInicio:"2026-01-05"}];
+  const c=rfCarteira(rf,{}, "2026-11-12");expect(c.itens[0]).toMatchObject({valor:0,fonte:"resgatado"});near(c.valor,500);
+  expect(rfResgatado(rf[0])).toBe(true);
+  const f=rfFluxos(rf,{});expect(f["2025-11"]).toBe(1000);expect(f["2026-01"]).toBe(500);expect(f["2026-05"]).toBe(-1070);
+  const sem=rfFluxos([{...rf[0],valorResgate:""}],{});near(sem["2026-05"],-(1000*Math.pow(1.1,189/365)),1e-6);   // sem valor: estima na data (LCI, isento)
+});

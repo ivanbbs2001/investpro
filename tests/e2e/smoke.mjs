@@ -5,7 +5,7 @@ const PORT=4179,BASE=`http://127.0.0.1:${PORT}/investpro/`;
 const ABAS=["Dashboard","Comparação","Evolução","Análise","Projeções","Renda Fixa","INCO","Tesouro Direto","Ações","ETFs","FIIs","Cripto","Aportes","Simulação","Orçamento","IRPF","PRF","Imóveis","Índices","Config"];
 const hoje=new Date().toISOString().slice(0,10),mes=hoje.slice(0,7);
 const DADOS={
- "ip8-rf":[{id:"r1",dataInicio:"2025-11-12",dataVencimento:"2028-11-12",tipo:"LCI",indexador:"CDI",taxa:"100",valor:"10000"},{id:"r2",dataInicio:"2025-06-01",tipo:"CDB",indexador:"Pré",taxa:"12",valor:"5000",valorAtualManual:"5400"},{id:"r3",dataInicio:"2025-01-10",dataVencimento:"2030-01-10",tipo:"Tesouro IPCA+",indexador:"IPCA",taxa:"6",valor:"3000"}],
+ "ip8-rf":[{id:"r1",dataInicio:"2025-11-12",dataVencimento:"2028-11-12",tipo:"LCI",indexador:"CDI",taxa:"100",valor:"10000"},{id:"r2",dataInicio:"2025-06-01",tipo:"CDB",indexador:"Pré",taxa:"12",valor:"5000",valorAtualManual:"5400"},{id:"r3",dataInicio:"2025-01-10",dataVencimento:"2030-01-10",tipo:"Tesouro IPCA+",indexador:"IPCA",taxa:"6",valor:"3000"},{id:"r4",dataInicio:"2025-02-01",tipo:"CDB",indexador:"Pré",taxa:"11",valor:"2000",status:"Resgatado",dataResgate:"2026-03-01",valorResgate:"2200"}],
  "ip8-etf":[{id:"e1",ticker:"IVV",moeda:"USD",quantidade:"1",precoMedio:"610",dataCompra:"2025-01-23",precoAtual:"700"}],
  "ip8-fii":[{id:"f1",ticker:"HGLG11",quantidade:"10",precoMedio:"150",dataCompra:"2025-03-01"}],
  "ip8-cr":[{id:"c1",ticker:"BTC",tipo:"Compra",quantidade:"0.01",valorInvestido:"3000",dataCompra:"2025-05-01"}],
@@ -28,6 +28,8 @@ async function rodar(browser,seed,rotulo){
     const novo=p.getByRole("button",{name:"+ Novo"}).first();
     if(await novo.count()){await novo.click();await p.waitForTimeout(150);const c=p.getByRole("button",{name:"Cancelar"}).first();if(await c.count())await c.click();}
   }
+  if(seed){const t=await p.locator("body").innerText();if(!t.includes("Baixar agora"))erros.push("lembrete de backup não apareceu");
+    await p.locator(".dsb").getByText(/Renda Fixa\s*$/).first().click();await p.waitForTimeout(250);if(!(await p.getByText(/Mostrar 1 resgatado/).count()))erros.push("filtro de resgatados não apareceu");}
   await p.waitForTimeout(500);await ctx.close();
   console.log(`${erros.length?"FALHOU":"ok    "} ${rotulo} (${ABAS.length} abas)`);erros.forEach(e=>console.log("   -",e));return erros.length;
 }

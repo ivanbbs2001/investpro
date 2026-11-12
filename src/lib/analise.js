@@ -49,5 +49,6 @@ export const anDespesaMedia=(orc,hojeISO,janela=6)=>{const atual=hojeISO.slice(0
   const ms=[];for(let k=1;k<=janela;k++)ms.push(etfAddMes(atual,-k));const usados=ms.filter(m=>tot[m]>0);
   return{media:usados.length?usados.reduce((a,m)=>a+tot[m],0)/usados.length:0,meses:usados.length};};
 export const anReservaPadrao=rf=>(rf||[]).filter(i=>i.tipo==="Tesouro Selic"||i.indexador==="Selic").map(i=>i.id);
-export const anReserva=(rf,ids,media)=>{const sel=new Set(ids==null?anReservaPadrao(rf):ids);const itens=(rf||[]).filter(i=>sel.has(i.id));const valor=soma(itens,i=>n(i.valor));
+/* valores: {id: valor atual estimado}; sem ele usa o valor aplicado */
+export const anReserva=(rf,ids,media,valores)=>{const sel=new Set(ids==null?anReservaPadrao(rf):ids);const itens=(rf||[]).filter(i=>sel.has(i.id));const valor=soma(itens,i=>valores&&valores[i.id]!=null?n(valores[i.id]):n(i.valor));
   return{valor,itens,meses:media>0?valor/media:null};};

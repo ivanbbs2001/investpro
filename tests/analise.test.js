@@ -56,3 +56,8 @@ test('reserva: janela de 6 meses (mês -6 entra, -7 não)',()=>{
   const orc=[{tipo:"Despesa",data:"2026-05-10",valor:"1000"},{tipo:"Despesa",data:"2026-04-10",valor:"9000"},{tipo:"Despesa",data:"2026-10-10",valor:"2000"}];
   const m=A.anDespesaMedia(orc,"2026-11-12");near(m.media,1500);expect(m.meses).toBe(2);
 });
+
+test('reserva usa o valor atual estimado quando informado',()=>{
+  const rf=[{id:"a",tipo:"Tesouro Selic",valor:"10000"}];
+  expect(A.anReserva(rf,null,1000).valor).toBe(10000);expect(A.anReserva(rf,null,1000,{a:11000}).meses).toBe(11);
+});

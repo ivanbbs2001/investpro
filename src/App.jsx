@@ -288,7 +288,7 @@ function Pie({data,size=260}){const P=useT();const[hover,setHover]=useState(null
   </div>);
 }
 
-function Mdl({title,fields,onSave,onCancel,initial,banks,autoFocus}){const P=useT();const S=useS();const[v,setV]=useState(initial||{});const set=(k,val)=>setV(p=>({...p,[k]:val}));const firstRef=useRef(null);
+function Mdl({title,fields,onSave,onCancel,initial,banks,autoFocus,onDelete}){const P=useT();const S=useS();const[v,setV]=useState(initial||{});const set=(k,val)=>setV(p=>({...p,[k]:val}));const firstRef=useRef(null);
   useEffect(()=>{if(firstRef.current)firstRef.current.focus();},[]);
   const rf=fields.map(f=>{
     if(f.key==="banco"&&f.type==="select"&&f.useBanks)return{...f,options:banks||DBANKS};
@@ -298,7 +298,7 @@ function Mdl({title,fields,onSave,onCancel,initial,banks,autoFocus}){const P=use
   return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16}} onClick={onCancel}><div style={{...S.card,maxWidth:560,width:"100%",margin:0,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}><div style={{fontSize:16,fontWeight:700,marginBottom:20}}>{title}</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12,marginBottom:16}}>{rf.map(f=>{if(f.hidden)return null;
     // showWhen: "key=value" conditional visibility
     if(f.showWhen){const[sk,sv2]=f.showWhen.split("=");if((v[sk]||"")!==sv2)return null;}
-    return(<div key={f.key} style={f.wide?{gridColumn:"1/-1"}:{}}><label style={S.lbl}>{f.label}</label>{f.type==="select"?(<select style={S.sel} value={v[f.key]||""} onChange={e=>{set(f.key,e.target.value);if(f.key==="categoria"&&typeof AUTO_FIXO!=="undefined"&&AUTO_FIXO.includes(e.target.value))set("fixo",true);}}><option value="">Selecione</option>{f.options.map(o=><option key={o} value={o}>{f.emojiMap&&f.emojiMap[o]?f.emojiMap[o]+" "+o:o}</option>)}</select>):f.type==="checkbox"?(<label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}><input type="checkbox" checked={!!v[f.key]} onChange={e=>set(f.key,e.target.checked)}/><span style={{fontSize:13,color:P.text}}>{f.checkLabel||"Sim"}</span></label>):f.readOnly?(<div style={{...S.i,background:P.bg,color:P.textDim}}>{v[f.key]||"Auto"}</div>):(<input ref={(autoFocus===f.key)?firstRef:null} style={S.i} type={f.type||"text"} step={f.step} placeholder={f.placeholder||""} value={v[f.key]||""} max={f.type==="date"?"2099-12-31":undefined} min={f.type==="date"?"2020-01-01":undefined} onChange={e=>set(f.key,e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();let out={...v,id:v.id||uid()};if(fields.some(ff=>ff.key==="rendAnual")){const c=calcRF(v);out={...out,...c};}onSave(out);}}}/>)}</div>);})}</div><div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><button style={S.btnO} onClick={onCancel}>Cancelar</button><button style={S.btn()} onClick={()=>{let out={...v,id:v.id||uid()};if(fields.some(f=>f.key==="rendAnual")){const c=calcRF(v);out={...out,...c};}onSave(out);}}>Salvar</button></div></div></div>);}
+    return(<div key={f.key} style={f.wide?{gridColumn:"1/-1"}:{}}><label style={S.lbl}>{f.label}</label>{f.type==="select"?(<select style={S.sel} value={v[f.key]||""} onChange={e=>{set(f.key,e.target.value);if(f.key==="categoria"&&typeof AUTO_FIXO!=="undefined"&&AUTO_FIXO.includes(e.target.value))set("fixo",true);}}><option value="">Selecione</option>{f.options.map(o=><option key={o} value={o}>{f.emojiMap&&f.emojiMap[o]?f.emojiMap[o]+" "+o:o}</option>)}</select>):f.type==="checkbox"?(<label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}><input type="checkbox" checked={!!v[f.key]} onChange={e=>set(f.key,e.target.checked)}/><span style={{fontSize:13,color:P.text}}>{f.checkLabel||"Sim"}</span></label>):f.readOnly?(<div style={{...S.i,background:P.bg,color:P.textDim}}>{v[f.key]||"Auto"}</div>):(<input ref={(autoFocus===f.key)?firstRef:null} style={S.i} type={f.type||"text"} step={f.step} placeholder={f.placeholder||""} value={v[f.key]||""} max={f.type==="date"?"2099-12-31":undefined} min={f.type==="date"?"2020-01-01":undefined} onChange={e=>set(f.key,e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();let out={...v,id:v.id||uid()};if(fields.some(ff=>ff.key==="rendAnual")){const c=calcRF(v);out={...out,...c};}onSave(out);}}}/>)}</div>);})}</div><div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>{onDelete&&initial&&initial.id&&<button style={{...S.btnO,color:P.red,borderColor:P.red,marginRight:"auto"}} onClick={onDelete}>Excluir</button>}<button style={S.btnO} onClick={onCancel}>Cancelar</button><button style={S.btn()} onClick={()=>{let out={...v,id:v.id||uid()};if(fields.some(f=>f.key==="rendAnual")){const c=calcRF(v);out={...out,...c};}onSave(out);}}>Salvar</button></div></div></div>);}
 function Cfm({msg,onOk,onNo}){const P=useT();const S=useS();return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16}} onClick={onNo}><div style={{...S.card,maxWidth:400,width:"100%",margin:0}} onClick={e=>e.stopPropagation()}><div style={{fontSize:14,marginBottom:20,lineHeight:1.6}}>{msg}</div><div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><button style={S.btnO} onClick={onNo}>Cancelar</button><button style={S.btn(P.red)} onClick={onOk}>Excluir</button></div></div></div>);}
 function CRUD({title,icon,fields,data,setData,columns,renderRow,footerRow,cards,headerExtra,banks,subtitle,sortFields}){const P=useT();const S=useS();const[modal,setModal]=useState(null);const[del,setDel]=useState(null);
   const{sb:cSb,sd:cSd,onS:cOnS,doS:cDoS}=useSort();const sortedData=sortFields?cDoS(data):data;
@@ -511,7 +511,7 @@ function RFTab({data:dataAll,setData,banks,dashRetPct,rfCart}){const P=useT();co
     </div>)}
     {sub==="venc"&&(<div style={S.card}><div style={{fontSize:14,fontWeight:700,marginBottom:16}}>Vencimentos</div><VencSec title="⚠ Até 30d" items={v30} P={P}/><VencSec title="⏳ 30-180d" items={v180} P={P}/><VencSec title="✓ +180d" items={vP} P={P}/>{!data.length&&<div style={{color:P.textMuted,textAlign:"center",padding:20}}>Nenhum</div>}</div>)}
     {sub==="lista"&&(sorted.length===0?<div style={{textAlign:"center",padding:60,color:P.textMuted}}>Nenhum registro</div>:(
-    <div style={{...S.card,padding:0,overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr>{RF_C.map(c=>(<STH key={c.k} label={c.l} field={c.k} sb={sb} sd={sd} onS={onS} style={S.th}/>))}<th style={S.th}></th></tr></thead><tbody>{sorted.map((i,ri)=>{const d30=diasV(i.dataVencimento)<=30;const ic=IDX_COLORS[i.indexador]||IDX_COLORS.Outro;return(<TR key={i.id} baseBg={d30?"rgba(239,68,68,0.12)":ri%2?"rgba(128,140,160,0.12)":undefined} onClick={()=>setModal(i)}>
+    <div style={{...S.card,padding:0,overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr>{RF_C.map(c=>(<STH key={c.k} label={c.l} field={c.k} sb={sb} sd={sd} onS={onS} style={S.th}/>))}</tr></thead><tbody>{sorted.map((i,ri)=>{const d30=diasV(i.dataVencimento)<=30;const ic=IDX_COLORS[i.indexador]||IDX_COLORS.Outro;return(<TR key={i.id} baseBg={d30?"rgba(239,68,68,0.12)":ri%2?"rgba(128,140,160,0.12)":undefined} onClick={()=>setModal(i)}>
       <td style={S.td}>{fD(i.dataInicio)}</td><td style={{...S.td,color:d30?P.red:P.text}}>{fD(i.dataVencimento)}</td>
       <td style={S.td}><span style={S.tag(P.blue,P.blueDim)}>{i.tipo||"—"}</span></td>
       <td style={S.td}><span style={{display:"inline-block",padding:"2px 8px",borderRadius:4,fontSize:11,fontWeight:600,color:ic.c,background:ic.bg}}>{i.indexador||"—"}</span></td>
@@ -523,7 +523,6 @@ function RFTab({data:dataAll,setData,banks,dashRetPct,rfCart}){const P=useT();co
       <td style={{...S.td,color:P.accent,fontWeight:600}}>{fmt(i.rendLiq)}</td>
       <td style={{...S.td,color:P.accent}}>{fmt(i.rendMensal)}</td>
       <td style={S.td}>{i.emissor||"—"}</td>
-      <td style={S.td}><button style={{background:"transparent",border:"none",color:P.textMuted,cursor:"pointer",fontSize:16,fontFamily:"inherit"}} onClick={e=>{e.stopPropagation();setDel(i.id);}}>✕</button></td>
     </TR>);})}</tbody>
     <tfoot><tr>
       <td colSpan={7} style={{...S.td,fontWeight:700,borderBottom:"none"}}>TOTAL</td>
@@ -531,11 +530,11 @@ function RFTab({data:dataAll,setData,banks,dashRetPct,rfCart}){const P=useT();co
       <td style={{...S.td,fontWeight:700,borderBottom:"none"}}>{fmt(filtered.reduce((a,i)=>a+(Number(i._atual)||0),0))}</td>
       <td style={{...S.td,fontWeight:700,color:P.accent,borderBottom:"none"}}>{fmt(tRL)}</td>
       <td style={{...S.td,fontWeight:700,color:P.accent,borderBottom:"none"}}>{fmt(tRM)}</td>
-      <td colSpan={2} style={{...S.td,borderBottom:"none"}}></td>
+      <td style={{...S.td,borderBottom:"none"}}></td>
     </tr></tfoot>
     </table></div>))}
-    {modal&&<Mdl title={modal==="new"?"Novo":"Editar"} fields={RF_FIELDS} initial={modal==="new"?{dataInicio:new Date().toISOString().slice(0,10)}:modal} autoFocus="dataInicio" onSave={doSave} onCancel={()=>setModal(null)} banks={banks}/>}
-    {del&&<Cfm msg="Excluir?" onOk={()=>{setData(p=>p.filter(x=>x.id!==del));setDel(null);}} onNo={()=>setDel(null)}/>}
+    {modal&&<Mdl title={modal==="new"?"Novo":"Editar"} fields={RF_FIELDS} initial={modal==="new"?{dataInicio:new Date().toISOString().slice(0,10)}:modal} autoFocus="dataInicio" onSave={doSave} onCancel={()=>setModal(null)} banks={banks} onDelete={modal!=="new"?()=>{const id=modal.id;setModal(null);setDel(id);}:undefined}/>}
+    {del&&<Cfm msg="Excluir definitivamente? Se o título foi resgatado, prefira mudar o Status para Resgatado — assim o histórico e a Análise ficam corretos." onOk={()=>{setData(p=>p.filter(x=>x.id!==del));setDel(null);}} onNo={()=>setDel(null)}/>}
   </div>);
 }
 

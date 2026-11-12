@@ -35,7 +35,7 @@ test('alocação e próximo aporte',()=>{
   const ap2=A.anAporte(v,{rf:"50",etfs:"30",fiis:"20"},1000);near(ap2.reduce((a,x)=>a+x.valor,0),1000,0.02);
   expect(A.anAporte(v,{},100)).toEqual([]);
 });
-test('reserva: média das despesas dos 3 meses fechados, sem Investimentos',()=>{
+test('reserva: média das despesas dos 6 meses fechados, sem Investimentos',()=>{
   const orc=[{tipo:"Despesa",data:"2026-10-05",valor:"3000",categoria:"Mercado"},{tipo:"Despesa",data:"2026-10-06",valor:"9999",categoria:"Investimentos"},{tipo:"Despesa",data:"2026-09-05",valor:"2000",categoria:"Luz"},{tipo:"Receita",data:"2026-09-05",valor:"9000"},{tipo:"Despesa",data:"2026-11-02",valor:"500",categoria:"Luz"}];
   const m=A.anDespesaMedia(orc,"2026-11-12");near(m.media,2500);expect(m.meses).toBe(2);
   const rf=[{id:"a",tipo:"Tesouro Selic",valor:"10000"},{id:"b",tipo:"CDB",indexador:"CDI",valor:"5000"}];
@@ -50,4 +50,9 @@ test('RF só entra no retorno quando os dois meses têm RF estimada; aportes RF 
   const s=A.anSerie(snaps,{},{"2026-11":500});const nov=s.find(x=>x.ym==="2026-11"),out=s.find(x=>x.ym==="2026-10");
   expect(nov.comRf).toBe(true);expect(nov.lucro).toBeCloseTo(100);        // (2600-2000)-500
   expect(out.comRf).toBe(false);expect(out.lucro).toBeCloseTo(0);         // set sem rfEst: só ETFs (1000→1000)
+});
+
+test('reserva: janela de 6 meses (mês -6 entra, -7 não)',()=>{
+  const orc=[{tipo:"Despesa",data:"2026-05-10",valor:"1000"},{tipo:"Despesa",data:"2026-04-10",valor:"9000"},{tipo:"Despesa",data:"2026-10-10",valor:"2000"}];
+  const m=A.anDespesaMedia(orc,"2026-11-12");near(m.media,1500);expect(m.meses).toBe(2);
 });

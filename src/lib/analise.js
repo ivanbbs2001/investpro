@@ -44,7 +44,7 @@ export const anAporte=(valores,alvos,aporte)=>{const a=anAlocacao(valores,alvos)
   const need=a.linhas.map(l=>({k:l.k,l:l.l,falta:l.alvo!=null?Math.max(0,l.alvo/100*T-l.valor):0,alvo:l.alvo||0}));const sf=need.reduce((s,x)=>s+x.falta,0);
   const res=need.map(x=>({k:x.k,l:x.l,valor:sf>=aporte?aporte*x.falta/(sf||1):x.falta+(aporte-sf)*x.alvo/a.somaAlvos}));return res.filter(r=>r.valor>0.005).map(r=>({...r,valor:Math.round(r.valor*100)/100}));};
 /* Reserva de emergência */
-export const anDespesaMedia=(orc,hojeISO,janela=3)=>{const atual=hojeISO.slice(0,7),tot={};
+export const anDespesaMedia=(orc,hojeISO,janela=6)=>{const atual=hojeISO.slice(0,7),tot={};
   (orc||[]).forEach(i=>{if(i.tipo!=="Despesa"||!i.data||i.categoria==="Investimentos")return;const m=i.data.slice(0,7);if(m>=atual)return;tot[m]=(tot[m]||0)+n(i.valor);});
   const ms=[];for(let k=1;k<=janela;k++)ms.push(etfAddMes(atual,-k));const usados=ms.filter(m=>tot[m]>0);
   return{media:usados.length?usados.reduce((a,m)=>a+tot[m],0)/usados.length:0,meses:usados.length};};

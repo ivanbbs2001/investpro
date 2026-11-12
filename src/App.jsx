@@ -1,4 +1,8 @@
 import React,{useState,useEffect,useRef,useMemo,createContext,useContext,useCallback} from"react";
+import{uid,ymdToUTC,localISO,tdParseLine,tdMoney}from"./lib/util.js";
+import{CR_TICKERS,CR_ISENCAO_MENSAL,CR_DEFASADO_MS,crInfo,crTk,crQ,crFmtQtd,crCalcular,crResumo,crPatrimonio,crVendasPorMes,crAlertasIsencao,crIrpfLinhas,crBuscarCotacoes,crMesclarCotacoes,crParseCSV,crItemDeImport,crDuplicado,crPrepararModal,crFinalizarItem,crValidarItem}from"./lib/cripto.js";
+import{etfAddDias,etfMeses,etfMesesDesde,etfCustoBRL,etfAtualBRL,etfSerie,etfBuscarFx,etfMesclarFx}from"./lib/etf.js";
+import{fiiBuscarCotacoes,fiiMesclarCotacoes}from"./lib/fii.js";
 import{db,doc,getDoc,setDoc}from"./firebase.js";
 const TC=createContext();const useT=()=>useContext(TC);
 const DARK={bg:"#0b0f14",surface:"#12171e",surfaceAlt:"#181e27",border:"#1e2630",borderLight:"#2a3342",text:"#e2e8f0",textDim:"#8494a7",textMuted:"#556677",accent:"#10b981",accentGlow:"rgba(16,185,129,0.12)",red:"#ef4444",redDim:"rgba(239,68,68,0.12)",blue:"#3b82f6",blueDim:"rgba(59,130,246,0.12)",yellow:"#f59e0b",yellowDim:"rgba(245,158,11,0.12)",purple:"#a855f7",purpleDim:"rgba(168,85,247,0.12)",orange:"#f97316",orangeDim:"rgba(249,115,22,0.12)",cyan:"#06b6d4",cyanDim:"rgba(6,182,212,0.12)",hover:"rgba(255,255,255,0.04)",sidebarBg:"#0f1319",thBg:"#181e27"};
@@ -19,7 +23,6 @@ const DBANKS=["NUBANK","INTER","CAIXA","SISPRIME","DAYCOVAL","RICO"];
 const fmt=v=>{if(v==null||v==="")return"—";const n=Number(v);return n.toLocaleString("pt-BR",{style:"currency",currency:"BRL",minimumFractionDigits:2,maximumFractionDigits:2});};
 const fP=v=>(v!=null&&v!=="")?Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})+"%":"—";
 const fD=d=>{if(!d)return"—";const p=d.split("-");return`${p[2]}/${p[1]}/${p[0]}`;};
-const uid=()=>Math.random().toString(36).slice(2,9);
 const mL=d=>{if(!d)return"";const[y,m]=d.split("-");const ms=["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];return`${ms[parseInt(m)-1]}/${y}`;};
 function getIR(dias){if(dias<=180)return 22.5;if(dias<=360)return 20;if(dias<=720)return 17.5;return 15;}
 function diasV(dv){if(!dv)return 9999;return Math.max(0,Math.floor((new Date(dv)-new Date())/(864e5)));}
@@ -318,8 +321,6 @@ function IndTab({data,setData,prfRef,setPrfRef}){const P=useT();const S=useS();c
 
 function useSort(defField,defDir){const[sb,setSb]=useState(defField||null);const[sd,setSd]=useState(defDir||"asc");const onS=f=>{if(sb===f)setSd(d=>d==="asc"?"desc":"asc");else{setSb(f);setSd("asc");}};const doS=arr=>{if(!sb)return arr;return[...arr].sort((a,b)=>{let va=a[sb],vb=b[sb];if(va==null)va="";if(vb==null)vb="";const na=Number(va),nb=Number(vb);if(!isNaN(na)&&!isNaN(nb))return sd==="asc"?na-nb:nb-na;return sd==="asc"?String(va).localeCompare(String(vb)):String(vb).localeCompare(String(va));});};return{sb,sd,onS,doS};}
 /* ===== Utilitários (calendário puro: independem do fuso horário do navegador) ===== */
-const ymdToUTC=v=>{if(typeof v==="number")return v;const m=String(v||"").match(/^(\d{4})-(\d{2})-(\d{2})/);return m?Date.UTC(+m[1],+m[2]-1,+m[3]):NaN;};
-const localISO=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 /* PRF: dias úteis (seg-sex) entre duas datas YYYY-MM-DD, inclusive */
 const prfNetworkDays=(start,end)=>{const a=ymdToUTC(start),b=ymdToUTC(end);if(isNaN(a)||isNaN(b))return 0;let c=0;for(let t=a;t<=b;t+=864e5){const w=new Date(t).getUTCDay();if(w!==0&&w!==6)c++;}return c;};
 const prfMonthBounds=ymd=>{const t=ymdToUTC(ymd);if(isNaN(t))return null;const d=new Date(t),y=d.getUTCFullYear(),m=d.getUTCMonth();return{first:Date.UTC(y,m,1),last:Date.UTC(y,m+1,0)};};
@@ -397,199 +398,6 @@ const extratoPdfRows=(linhas,ignorar=[])=>{
     rows.push({dt:`${dm[3]}-${dm[2]}-${dm[1]}`,historico,desc,val:mov.toFixed(2)});
   });
   return rows;
-};
-
-/* ===================== CRIPTO: cálculo, cotações, importação e IR (funções puras) ===================== */
-const CR_ISENCAO_MENSAL=35000;            // limite mensal de vendas p/ alerta (conferir a regra vigente na Receita)
-const CR_DEFASADO_MS=30*60*1000;          // cotação mais antiga que isso é marcada como defasada
-const CR_CATALOGO=[
-  {tk:"BTC",nome:"Bitcoin",cg:"bitcoin",aw:"BTC",irpf:"01"},
-  {tk:"ETH",nome:"Ethereum",cg:"ethereum",aw:"ETH",irpf:"02"},
-  {tk:"BNB",nome:"BNB",cg:"binancecoin",aw:null,irpf:"02"},
-  {tk:"XRP",nome:"XRP",cg:"ripple",aw:"XRP",irpf:"02"},
-  {tk:"DOGE",nome:"Dogecoin",cg:"dogecoin",aw:"DOGE",irpf:"02"},
-  {tk:"SHIB",nome:"Shiba Inu",cg:"shiba-inu",aw:null,irpf:"02"},
-  {tk:"ETC",nome:"Ethereum Classic",cg:"ethereum-classic",aw:null,irpf:"02"},
-  {tk:"LTC",nome:"Litecoin",cg:"litecoin",aw:"LTC",irpf:"02"},
-  {tk:"SOL",nome:"Solana",cg:"solana",aw:null,irpf:"02"},
-  {tk:"ADA",nome:"Cardano",cg:"cardano",aw:null,irpf:"02"},
-  {tk:"DOT",nome:"Polkadot",cg:"polkadot",aw:null,irpf:"02"},
-  {tk:"AVAX",nome:"Avalanche",cg:"avalanche-2",aw:null,irpf:"02"},
-  {tk:"LINK",nome:"Chainlink",cg:"chainlink",aw:null,irpf:"02"},
-  {tk:"TRX",nome:"TRON",cg:"tron",aw:null,irpf:"02"},
-  {tk:"BCH",nome:"Bitcoin Cash",cg:"bitcoin-cash",aw:null,irpf:"02"},
-  {tk:"XLM",nome:"Stellar",cg:"stellar",aw:null,irpf:"02"},
-  {tk:"ATOM",nome:"Cosmos",cg:"cosmos",aw:null,irpf:"02"},
-  {tk:"USDT",nome:"Tether",cg:"tether",aw:"USDT",irpf:"03"},
-  {tk:"USDC",nome:"USD Coin",cg:"usd-coin",aw:null,irpf:"03"}
-];
-const CR_TICKERS=CR_CATALOGO.map(c=>c.tk);
-const crInfo=tk=>CR_CATALOGO.find(c=>c.tk===String(tk||"").trim().toUpperCase());
-const crTk=r=>String((r&&r.ticker)||"").trim().toUpperCase();
-const crVazio=x=>x===""||x==null;
-const crQ=x=>{if(crVazio(x))return 0;const n=Number(String(x).replace(",","."));return isFinite(n)?n:0;};
-const crFmtQtd=q=>{const n=Number(q);return isFinite(n)?n.toLocaleString("pt-BR",{maximumFractionDigits:8}):"—";};
-
-/* Posição por moeda pelo CUSTO MÉDIO. Compra: soma qtd e custo. Venda: baixa custo proporcional (qtd vendida / qtd total).
-   `ate` (YYYY-MM-DD) limita às operações até essa data; operações sem data contam como as mais antigas.
-   Compra sem valor pago = custo desconhecido (semCusto): não entra no custo nem gera lucro "fantasma". */
-const crCalcular=(cr,ate)=>{
-  const ops=(cr||[]).map((r,idx)=>({r,idx,tk:crTk(r),tipo:r.tipo==="Venda"?"Venda":"Compra",data:r.dataCompra||""}))
-    .filter(o=>o.tk&&(!ate||!o.data||o.data<=ate))
-    .sort((a,b)=>(a.data||"0000-00-00").localeCompare(b.data||"0000-00-00")||a.idx-b.idx);
-  const pos={},real=[],incons=[];
-  ops.forEach(({r,tk,tipo,data})=>{
-    const p=pos[tk]||(pos[tk]={ticker:tk,moeda:"",qtd:0,custo:0,semCusto:false,exchanges:new Set(),wallets:new Set(),precoManual:null,valorAtualLegado:0,legadoOk:true,vendeu:false});
-    if(r.moeda&&!p.moeda)p.moeda=r.moeda;
-    const q=crQ(r.quantidade);
-    if(tipo==="Compra"){
-      p.qtd+=q;const c=crQ(r.valorInvestido);
-      if(c>0)p.custo+=c;else p.semCusto=true;
-      if(r.exchange)p.exchanges.add(r.exchange);if(r.wallet)p.wallets.add(r.wallet);
-      if(crQ(r.precoManual)>0)p.precoManual=crQ(r.precoManual);        // cronológico: o mais recente vence
-      const va=crQ(r.valorAtual);if(va>0)p.valorAtualLegado+=va;else p.legadoOk=false;
-    }else{
-      const qv=Math.min(q,p.qtd);
-      if(q>p.qtd+1e-9)incons.push({ticker:tk,data,msg:`Venda de ${crFmtQtd(q)} ${tk} maior que o saldo (${crFmtQtd(p.qtd)})${data?" em "+data:""}`});
-      const custoRem=p.qtd>0?p.custo*(qv/p.qtd):0;const recebido=crQ(r.valorRecebido);
-      real.push({id:r.id,data,ticker:tk,qtd:q,recebido,custo:custoRem,ganho:recebido-custoRem,semCusto:p.semCusto});
-      p.qtd-=qv;p.custo-=custoRem;p.vendeu=true;
-      if(p.qtd<1e-12){p.qtd=0;p.custo=0;}
-    }
-  });
-  const posicoes=Object.values(pos).filter(p=>p.qtd>0).map(p=>({...p,exchanges:[...p.exchanges],wallets:[...p.wallets],precoMedio:(!p.semCusto&&p.qtd>0)?p.custo/p.qtd:null})).sort((a,b)=>a.ticker.localeCompare(b.ticker));
-  return{posicoes,realizadas:real,inconsistencias:incons};
-};
-/* Valor de mercado de uma posição: preço manual (override) > cotação > valor atual lançado (legado) > custo */
-const crValorar=(p,cot,agora=Date.now())=>{
-  const q=cot&&cot.quotes&&cot.quotes[p.ticker];
-  let preco=null,fonte="",var24h=null,defasado=false;
-  if(p.precoManual>0){preco=p.precoManual;fonte="manual";}
-  else if(q&&Number(q.brl)>0){preco=Number(q.brl);fonte=q.fonte||"cotação";var24h=q.var24h==null?null:Number(q.var24h);defasado=!q.buscadoEm||agora-new Date(q.buscadoEm).getTime()>CR_DEFASADO_MS;}
-  let valor;
-  if(preco!=null)valor=p.qtd*preco;
-  else if(p.legadoOk&&p.valorAtualLegado>0&&!p.vendeu){valor=p.valorAtualLegado;fonte="valor lançado";}
-  else{valor=p.custo;fonte=p.custo>0?"custo (sem cotação)":"sem cotação";}
-  const lp=(preco!=null&&!p.semCusto)?valor-p.custo:null;
-  return{...p,preco,fonte,var24h,defasado,valor,lp,lpPct:(lp!=null&&p.custo>0)?lp/p.custo*100:null};
-};
-const crResumo=(cr,cot,ate,agora=Date.now())=>{
-  const c=crCalcular(cr,ate);const ls=c.posicoes.map(p=>crValorar(p,cot,agora));
-  const valorTotal=ls.reduce((a,l)=>a+l.valor,0),custoTotal=ls.reduce((a,l)=>a+l.custo,0);
-  const ok=ls.filter(l=>l.lp!=null);const lp=ok.reduce((a,l)=>a+l.lp,0),baseLp=ok.reduce((a,l)=>a+l.custo,0);
-  return{linhas:ls.map(l=>({...l,peso:valorTotal>0?l.valor/valorTotal*100:0})),valorTotal,custoTotal,lp,lpPct:baseLp>0?lp/baseLp*100:null,
-    semCusto:ls.filter(l=>l.semCusto).length,semCotacao:ls.filter(l=>l.preco==null).length,realizadas:c.realizadas,inconsistencias:c.inconsistencias};
-};
-/* Patrimônio em cripto usado no Dashboard e nas Projeções: base "custo" ou "mercado" */
-const crPatrimonio=(cr,cot,base,agora=Date.now())=>{
-  const c=crCalcular(cr);
-  return c.posicoes.reduce((a,p)=>a+(base==="custo"?p.custo:crValorar(p,cot,agora).valor),0);
-};
-/* Vendas por mês (para o alerta do limite) e alertas dos últimos 12 meses */
-const crVendasPorMes=real=>{const m={};(real||[]).forEach(r=>{const k=(r.data||"").slice(0,7);if(!k)return;const x=m[k]||(m[k]={total:0,ganho:0,n:0});x.total+=r.recebido;x.ganho+=r.ganho;x.n++;});return m;};
-const crAlertasIsencao=(vendasMes,hoje,limite=CR_ISENCAO_MENSAL)=>{
-  const t=(+hoje.slice(0,4))*12+(+hoje.slice(5,7)-1)-12,corte=`${Math.floor(t/12)}-${String(t%12+1).padStart(2,"0")}`;
-  return Object.entries(vendasMes).map(([mes,v])=>({mes,total:v.total,pct:v.total/limite*100,estourou:v.total>limite,proximo:v.total>=limite*0.8&&v.total<=limite}))
-    .filter(a=>(a.estourou||a.proximo)&&a.mes>=corte).sort((a,b)=>b.mes.localeCompare(a.mes));};
-/* IRPF (Bens e Direitos, grupo 08): posição e custo em 31/12 do ano-base e do anterior */
-const crIrpfLinhas=(cr,ano)=>{
-  const a=crCalcular(cr,`${ano}-12-31`),b=crCalcular(cr,`${ano-1}-12-31`);
-  const tks=[...new Set([...a.posicoes,...b.posicoes].map(p=>p.ticker))].sort();
-  return tks.map(tk=>{const pa=a.posicoes.find(p=>p.ticker===tk),pb=b.posicoes.find(p=>p.ticker===tk),info=crInfo(tk),ref=pa||pb;
-    const local=(ref.exchanges[0]||ref.wallets[0]||"");
-    return{ticker:tk,nome:(info&&info.nome)||ref.moeda||tk,codigo:info?info.irpf:"02",qtdAtual:pa?pa.qtd:0,custoAtual:pa?pa.custo:0,qtdAnterior:pb?pb.qtd:0,custoAnterior:pb?pb.custo:0,semCusto:!!(pa&&pa.semCusto),
-      discriminacao:pa?`${crFmtQtd(pa.qtd)} ${tk} (${(info&&info.nome)||ref.moeda||tk})${pa.semCusto?"":" — custo médio R$ "+(pa.custo/pa.qtd).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}${local?" — custódia: "+local:""}`:""};});
-};
-
-/* ---------- Cotações em R$: CoinGecko (principal) + AwesomeAPI (reserva). Nunca apaga cotação boa. ---------- */
-const crFetchJSON=async(fetchFn,url,ms=12000)=>{
-  const c=typeof AbortController!=="undefined"?new AbortController():null;const t=c?setTimeout(()=>c.abort(),ms):null;
-  try{const r=await fetchFn(url,c?{signal:c.signal}:undefined);if(!r.ok)throw new Error("HTTP "+r.status);return await r.json();}
-  finally{if(t)clearTimeout(t);}
-};
-const crBuscarCotacoes=async(tickers,fetchFn)=>{
-  const f=fetchFn||((...a)=>fetch(...a));const pedidos=[...new Set((tickers||[]).map(t=>String(t).toUpperCase()))];
-  const conhecidos=pedidos.map(crInfo).filter(Boolean),semCatalogo=pedidos.filter(t=>!crInfo(t)),quotes={},erros=[];
-  const msg=e=>e&&e.name==="AbortError"?"tempo esgotado":String((e&&e.message)||e);
-  if(conhecidos.length){
-    try{const ids=[...new Set(conhecidos.map(c=>c.cg))].join(",");
-      const d=await crFetchJSON(f,`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=brl&include_24hr_change=true&include_last_updated_at=true`);
-      conhecidos.forEach(c=>{const x=d&&d[c.cg];if(x&&Number(x.brl)>0)quotes[c.tk]={brl:Number(x.brl),var24h:x.brl_24h_change==null?null:Number(x.brl_24h_change),ts:x.last_updated_at?new Date(x.last_updated_at*1000).toISOString():null,fonte:"CoinGecko"};});
-    }catch(e){erros.push("CoinGecko: "+msg(e));}
-    const faltam=conhecidos.filter(c=>!quotes[c.tk]&&c.aw);
-    if(faltam.length){
-      try{const d=await crFetchJSON(f,`https://economia.awesomeapi.com.br/last/${faltam.map(c=>c.aw+"-BRL").join(",")}`);
-        faltam.forEach(c=>{const x=d&&d[c.aw+"BRL"];if(x&&Number(x.bid)>0)quotes[c.tk]={brl:Number(x.bid),var24h:x.pctChange==null?null:Number(x.pctChange),ts:x.timestamp?new Date(Number(x.timestamp)*1000).toISOString():null,fonte:"AwesomeAPI"};});
-      }catch(e){erros.push("AwesomeAPI: "+msg(e));}
-    }
-  }
-  return{quotes,erros,semCatalogo,pedidos};
-};
-const crMesclarCotacoes=(prev,res,agoraISO)=>{
-  const b={quotes:{},ultimaOK:null,ultimaTentativa:null,erro:null,...(prev||{})};const quotes={...b.quotes};
-  Object.entries(res.quotes).forEach(([tk,q])=>{quotes[tk]={...q,buscadoEm:agoraISO};});
-  const novos=Object.keys(res.quotes).length;const partes=[...res.erros];
-  const naoVeio=res.pedidos.filter(t=>!res.quotes[t]&&!res.semCatalogo.includes(t));
-  if(naoVeio.length&&!res.erros.length)partes.push("não retornou: "+naoVeio.join(", "));
-  if(res.semCatalogo.length)partes.push("sem cotação automática para "+res.semCatalogo.join(", ")+" (informe o preço manual)");
-  return{quotes,ultimaTentativa:agoraISO,ultimaOK:novos>0?agoraISO:b.ultimaOK,erro:partes.length?partes.join(" · "):null};
-};
-
-/* ---------- Importação de extrato (CSV): reconhece colunas por sinônimos; ignora o que não é compra/venda ---------- */
-const crNorm=s=>String(s==null?"":s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g," ").trim();
-const CR_COLUNAS={
-  data:["data","date","dia","data hora","datetime","horario","criado em","executado em","data da operacao","data operacao","time","created"],
-  tipo:["tipo","type","side","lado","operacao","tipo de operacao","transacao","acao","tipo da ordem","order type"],
-  ativo:["ativo","moeda","asset","coin","ticker","simbolo","par","pair","market","mercado","criptomoeda","token","moeda comprada"],
-  qtd:["quantidade","qtd","amount","qty","quantity","volume","executado","tamanho","quantidade executada"],
-  preco:["preco","price","cotacao","preco unitario","valor unitario","unit price","preco medio"],
-  valor:["valor","total","valor total","total brl","valor brl","brl","financeiro","value","valor pago","valor recebido","custo","total pago","total recebido","total r","valor r","total em reais","valor em reais","amount brl"]
-};
-const crQtdTexto=s=>{let t=String(s==null?"":s).replace(/[^\d.,\-]/g,"");if(!t)return null;const neg=t.startsWith("-");t=t.replace(/-/g,"");
-  if(t.includes(",")&&t.includes("."))t=t.lastIndexOf(",")>t.lastIndexOf(".")?t.replace(/\./g,"").replace(",","."):t.replace(/,/g,"");
-  else if(t.includes(","))t=t.replace(",",".");else if((t.match(/\./g)||[]).length>1)t=t.replace(/\./g,"");
-  const n=Number(t);return isFinite(n)&&n>0?{n,neg}:null;};
-const crAtivoTk=s=>{let t=String(s||"").trim();if(!t)return"";const porNome=CR_CATALOGO.find(c=>crNorm(c.nome)===crNorm(t));if(porNome)return porNome.tk;
-  t=t.toUpperCase();if(/[\/\-_ ]/.test(t))t=t.split(/[\/\-_ ]/)[0];else if(t.endsWith("BRL")&&t.length>3)t=t.slice(0,-3);return /^[A-Z0-9]{2,10}$/.test(t)?t:"";};
-const crTipoOp=s=>{const t=crNorm(s);if(/\b(compra|comprar|buy|bought|purchase|c)\b/.test(t))return"Compra";if(/\b(venda|vender|sell|sold|sale|v)\b/.test(t))return"Venda";return null;};
-const crParseCSV=text=>{
-  const linhas=String(text||"").split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-  const mapa=cab=>{const m={},norm=cab.map(crNorm);
-    ["preco","data","tipo","ativo","qtd","valor"].forEach(k=>{const i=norm.findIndex((h,ix)=>CR_COLUNAS[k].includes(h)&&!Object.values(m).includes(ix));if(i>=0)m[k]=i;});
-    ["data","tipo","ativo","qtd","valor","preco"].forEach(k=>{if(m[k]!=null)return;const i=norm.findIndex((h,ix)=>!Object.values(m).includes(ix)&&CR_COLUNAS[k].some(s=>s.length>3&&h.includes(s)));if(i>=0)m[k]=i;});
-    return m;};
-  let hi=-1,m=null;
-  for(let i=0;i<Math.min(6,linhas.length);i++){const mm=mapa(tdParseLine(linhas[i]));if(mm.data!=null&&mm.ativo!=null&&mm.qtd!=null&&mm.tipo!=null&&(mm.valor!=null||mm.preco!=null)){hi=i;m=mm;break;}}
-  if(hi<0)return{erro:"Cabeçalho não reconhecido. O arquivo precisa ter colunas de Data, Tipo (compra/venda), Ativo/Moeda, Quantidade e Valor (ou Preço).",itens:[],ignoradas:0};
-  const itens=[];let ignoradas=0;
-  linhas.slice(hi+1).forEach(l=>{const c=tdParseLine(l);
-    const tipo=crTipoOp(c[m.tipo]);const dm=String(c[m.data]||"").match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})|(\d{4})-(\d{2})-(\d{2})/);
-    const data=dm?(dm[4]?`${dm[4]}-${dm[5]}-${dm[6]}`:`${dm[3]}-${dm[2].padStart(2,"0")}-${dm[1].padStart(2,"0")}`):null;
-    const tk=crAtivoTk(c[m.ativo]),q=crQtdTexto(c[m.qtd]);
-    let valor=m.valor!=null?tdMoney(c[m.valor]):null;
-    if(valor==null&&m.preco!=null&&q){const pr=tdMoney(c[m.preco]);if(pr)valor=Math.round(pr*q.n*100)/100;}
-    if(!tipo||!data||!tk||!q||!(valor>0)){ignoradas++;return;}
-    itens.push({tipo,data,ticker:tk,quantidade:String(q.n),valor});});
-  return{erro:null,itens,ignoradas};
-};
-const crItemDeImport=(n,origem)=>({id:uid(),tipo:n.tipo,ticker:n.ticker,moeda:(crInfo(n.ticker)||{}).nome||n.ticker,quantidade:n.quantidade,
-  ...(n.tipo==="Venda"?{valorRecebido:n.valor.toFixed(2),valorInvestido:""}:{valorInvestido:n.valor.toFixed(2)}),valorAtual:"",exchange:origem||"",wallet:"",dataCompra:n.data});
-const crDuplicado=(existentes,n)=>existentes.some(x=>(x.tipo==="Venda"?"Venda":"Compra")===n.tipo&&crTk(x)===n.ticker&&(x.dataCompra||"")===n.data&&Math.abs(crQ(x.quantidade)-Number(n.quantidade))<1e-9&&Math.abs(crQ(n.tipo==="Venda"?x.valorRecebido:x.valorInvestido)-n.valor)<0.01);
-
-/* ---------- Cadastro: modal de Compra/Venda ---------- */
-const crPrepararModal=(row,tipo)=>{const b=row||{};const tk=crTk(b);const conhecido=!tk||!!crInfo(tk);return{...b,tipo,ticker:conhecido?tk:"OUTRA",tickerOutra:conhecido?"":tk};};
-const crFinalizarItem=it=>{const o={...it};let tk=String(o.ticker||"").trim().toUpperCase();if(tk==="OUTRA")tk=String(o.tickerOutra||"").trim().toUpperCase();
-  o.ticker=tk;delete o.tickerOutra;const info=crInfo(tk);o.moeda=info?info.nome:(o.moeda||tk);return o;};
-const crValidarItem=(it,outros)=>{
-  if(!/^[A-Z0-9]{2,10}$/.test(it.ticker||""))return"Informe a moeda (ticker com 2 a 10 letras/números).";
-  if(!(crQ(it.quantidade)>0))return"Informe a quantidade (maior que zero).";
-  if(!it.dataCompra)return"Informe a data da operação.";
-  if(it.tipo==="Venda"){
-    if(!(crQ(it.valorRecebido)>0))return"Informe o valor recebido na venda (R$).";
-    const p=crCalcular(outros,it.dataCompra).posicoes.find(x=>x.ticker===it.ticker);const saldo=p?p.qtd:0;
-    if(crQ(it.quantidade)>saldo+1e-9)return`Venda maior que o saldo de ${it.ticker} nessa data (saldo: ${crFmtQtd(saldo)}).`;
-  }
-  return null;
 };
 
 function VencSec({title,items,P}){const[open,setOpen]=useState(false);const S=useS();if(!items.length)return null;const total=items.reduce((a,i)=>a+(Number(i.valor)||0),0);return(<div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:700,color:title.includes("30d")?P.red:title.includes("180")?P.yellow:P.accent,marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:8}} onClick={()=>setOpen(!open)}><span style={{fontSize:14}}>{open?"▼":"▶"}</span>{title} ({items.length}) — Total: {fmt(total)}</div>{open&&<div style={{display:"flex",gap:8,flexWrap:"wrap",paddingLeft:22}}>{items.map(i=>(<div key={i.id} style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:6,padding:"8px 12px",fontSize:11}}><b>{i.tipo||i.incorporadora||""}</b> {i.emissor||i.empreendimento||""} — {fmt(i.valor)} — {fD(i.dataVencimento)} ({diasV(i.dataVencimento)}d)</div>))}</div>}</div>);}
@@ -776,68 +584,6 @@ function IncoTab({data,setData}){const P=useT();const S=useS();const[sub,setSub]
 const AC_F=[{key:"ticker",label:"Ticker"},{key:"empresa",label:"Empresa"},{key:"setor",label:"Setor"},{key:"quantidade",label:"Qtd",type:"number",step:"1"},{key:"precoMedio",label:"PM",type:"number",step:"0.01"},{key:"precoAtual",label:"Atual",type:"number",step:"0.01"},{key:"dataCompra",label:"Data",type:"date"},{key:"corretora",label:"Corretora"}];
 function AcTab({data,setData}){const P=useT();const S=useS();const tI=data.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0),tA=data.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoAtual)||Number(i.precoMedio)||0),0),lp=tA-tI;return<CRUD title="Ações" icon="▲" fields={AC_F} data={data} setData={setData} cards={<React.Fragment><SC label="Investido" value={fmt(tI)} color={P.yellow} dim={P.yellowDim}/><SC label="Atual" value={fmt(tA)} color={P.blue} dim={P.blueDim}/><SC label="L/P" value={fmt(lp)} color={lp>=0?P.accent:P.red} dim={lp>=0?P.accentGlow:P.redDim}/></React.Fragment>} columns={["Ticker","Empresa","Qtd","PM","Atual","Investido","Atual","L/P","Corretora"]} renderRow={i=>{const inv=(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),at=(Number(i.quantidade)||0)*(Number(i.precoAtual)||Number(i.precoMedio)||0),l=at-inv;return(<React.Fragment><td style={{...S.td,fontWeight:700}}>{i.ticker||"—"}</td><td style={S.td}>{i.empresa||"—"}</td><td style={S.td}>{i.quantidade||"—"}</td><td style={S.td}>{fmt(i.precoMedio)}</td><td style={S.td}>{fmt(i.precoAtual)}</td><td style={S.td}>{fmt(inv)}</td><td style={S.td}>{fmt(at)}</td><td style={{...S.td,color:l>=0?P.accent:P.red,fontWeight:600}}>{fmt(l)}</td><td style={S.td}>{i.corretora||"—"}</td></React.Fragment>);}}/>;
 }
-/* ===================== ETFs: oscilação e retorno mensal (US$ e R$) — funções puras ===================== */
-const etfYM=d=>String(d||"").slice(0,7);
-const etfAddMes=(ym,n)=>{const t=(+ym.slice(0,4))*12+(+ym.slice(5,7)-1)+n;return `${Math.floor(t/12)}-${String(t%12+1).padStart(2,"0")}`;};
-const etfFimMes=ym=>`${ym}-${String(new Date(Date.UTC(+ym.slice(0,4),+ym.slice(5,7),0)).getUTCDate()).padStart(2,"0")}`;
-const etfAddDias=(d,n)=>new Date(ymdToUTC(d)+n*864e5).toISOString().slice(0,10);
-const etfMeses=(de,ate)=>{const r=[];for(let m=de;m<=ate;m=etfAddMes(m,1))r.push(m);return r;};
-const etfNum=x=>{const n=Number(String(x==null?"":x).replace(",","."));return isFinite(n)&&n>0?n:null;};
-/* Dólar do último dia com cotação até `data` (no máximo 10 dias antes) */
-const etfFxEm=(fx,data)=>{const dia=(fx&&fx.dia)||{};let b=null;for(const d in dia){if(d<=data&&(b==null||d>b))b=d;}return(b&&ymdToUTC(data)-ymdToUTC(b)<=10*864e5)?Number(dia[b]):null;};
-const etfMesesDesde=(d,hoje)=>d?(ymdToUTC(hoje)-ymdToUTC(d))/864e5/30.4375:0;
-const etfCustoBRL=(i,fx)=>{const q=Number(i.quantidade)||0,pm=Number(i.precoMedio)||0;if(i.moeda!=="USD")return q*pm;const f=etfFxEm(fx,i.dataCompra||"")||(fx&&Number(fx.atual))||0;return q*pm*f;};
-const etfAtualBRL=(i,fx)=>{const q=Number(i.quantidade)||0,pa=Number(i.precoAtual)||Number(i.precoMedio)||0;return i.moeda==="USD"?q*pa*((fx&&Number(fx.atual))||0):q*pa;};
-/* Série mensal de uma posição. compras: [{data,qtd,preco}] na moeda nativa; histP/histFx: {"AAAA-MM":valor} (fechamentos informados) */
-const etfSerie=(compras,moeda,histP,histFx,fx,precoAtual,hoje)=>{
-  const usd=moeda==="USD",hojeYM=etfYM(hoje);const cs=[...compras].filter(c=>c.data&&c.qtd>0).sort((a,b)=>a.data.localeCompare(b.data));
-  if(!cs.length)return{linhas:[],resumo:null};
-  const fxAtual=(fx&&Number(fx.atual))||etfFxEm(fx,hoje)||null;
-  const fxFim=ym=>!usd?1:ym===hojeYM?fxAtual:(etfNum(histFx&&histFx[ym])||etfFxEm(fx,etfFimMes(ym)));
-  const fxCompra=d=>!usd?1:(etfFxEm(fx,d)||fxFim(etfYM(d)));
-  const preco=ym=>ym===hojeYM?etfNum(precoAtual):etfNum(histP&&histP[ym]);
-  const linhas=[];let qtdPrev=0,pPrev=null,fxPrev=null,primeiro=true;
-  etfMeses(etfYM(cs[0].data),hojeYM).forEach(ym=>{
-    const fim=etfFimMes(ym),doMes=cs.filter(c=>etfYM(c.data)===ym),qtdFim=cs.filter(c=>c.data<=fim).reduce((a,c)=>a+c.qtd,0);
-    const aporteNat=doMes.reduce((a,c)=>a+c.qtd*c.preco,0);
-    const fxs=doMes.map(c=>fxCompra(c.data));const aporteBRL=fxs.some(f=>!f)?null:doMes.reduce((a,c,i)=>a+c.qtd*c.preco*fxs[i],0);
-    const P=preco(ym),fxF=fxFim(ym);
-    const base=primeiro?(doMes.length?doMes[0].preco:null):pPrev,fxBase=primeiro?(doMes.length?fxs[0]:null):fxPrev;
-    const oscNat=(P&&base)?P/base-1:null;
-    const oscBRL=!usd?oscNat:(P&&base&&fxF&&fxBase)?(P*fxF)/(base*fxBase)-1:null;
-    const valorNat=P!=null?qtdFim*P:null;
-    const prevOk=qtdPrev===0||pPrev!=null;const valPrevNat=qtdPrev>0&&pPrev!=null?qtdPrev*pPrev:0;
-    const retNat=(valorNat!=null&&prevOk)?valorNat-valPrevNat-aporteNat:null;const bNat=valPrevNat+aporteNat;
-    const valorBRL=valorNat!=null&&fxF?valorNat*fxF:null;
-    const valPrevBRL=qtdPrev===0?0:(pPrev!=null&&fxPrev?qtdPrev*pPrev*fxPrev:null);
-    const retBRL=(valorBRL!=null&&valPrevBRL!=null&&aporteBRL!=null)?valorBRL-valPrevBRL-aporteBRL:null;const bBRL=(valPrevBRL||0)+(aporteBRL||0);
-    linhas.push({ym,parcial:ym===hojeYM,qtd:qtdFim,preco:P,fx:usd?fxF:null,precoBRL:P&&fxF?P*fxF:null,oscNat,oscBRL,
-      retNat:usd?retNat:null,retPctNat:usd&&retNat!=null&&bNat>0?retNat/bNat*100:null,retBRL,retPctBRL:retBRL!=null&&bBRL>0?retBRL/bBRL*100:null,
-      retNatNativo:retNat,retPctNativo:retNat!=null&&bNat>0?retNat/bNat*100:null,oscNat100:oscNat==null?null:oscNat*100,oscBRL100:oscBRL==null?null:oscBRL*100});
-    primeiro=false;qtdPrev=qtdFim;pPrev=P;fxPrev=fxF;
-  });
-  const qtd=cs.reduce((a,c)=>a+c.qtd,0),custoNat=cs.reduce((a,c)=>a+c.qtd*c.preco,0),pa=etfNum(precoAtual);
-  const fxsC=cs.map(c=>fxCompra(c.data));const custoBRL=fxsC.some(f=>!f)?null:cs.reduce((a,c,i)=>a+c.qtd*c.preco*fxsC[i],0);
-  const valNat=pa?qtd*pa:null,valBRL=valNat!=null&&fxAtual?valNat*fxAtual:null;
-  return{linhas,resumo:{qtd,custoNat,custoBRL,valNat,valBRL,lpNat:valNat!=null?valNat-custoNat:null,lpNatPct:valNat!=null&&custoNat>0?(valNat/custoNat-1)*100:null,
-    lpBRL:valBRL!=null&&custoBRL!=null?valBRL-custoBRL:null,lpBRLPct:valBRL!=null&&custoBRL>0?(valBRL/custoBRL-1)*100:null,pm:qtd>0?custoNat/qtd:null}};
-};
-/* Dólar: cotação atual + histórico diário (AwesomeAPI). Nunca devolve vazio por erro: quem chama mescla com o cache. */
-const etfBuscarFx=async(desde,hoje,fetchFn)=>{
-  const f=fetchFn||((...a)=>fetch(...a));const dia={},erros=[];let atual=null;
-  const msg=e=>e&&e.name==="AbortError"?"tempo esgotado":String((e&&e.message)||e);
-  try{const d=await crFetchJSON(f,"https://economia.awesomeapi.com.br/last/USD-BRL");if(d&&d.USDBRL&&Number(d.USDBRL.bid)>0)atual=Number(d.USDBRL.bid);else erros.push("dólar atual indisponível");}catch(e){erros.push("dólar atual: "+msg(e));}
-  let ini=desde;
-  while(desde&&ini<=hoje){const fim=etfAddDias(ini,299)<hoje?etfAddDias(ini,299):hoje;
-    try{const arr=await crFetchJSON(f,`https://economia.awesomeapi.com.br/json/daily/USD-BRL/400?start_date=${ini.replace(/-/g,"")}&end_date=${fim.replace(/-/g,"")}`);
-      (Array.isArray(arr)?arr:[]).forEach(x=>{const b=Number(x.bid),ts=Number(x.timestamp);if(b>0&&ts)dia[new Date(ts*1000-3*3600e3).toISOString().slice(0,10)]=b;});}
-    catch(e){erros.push("histórico do dólar: "+msg(e));break;}
-    ini=etfAddDias(fim,1);}
-  return{atual,dia,erros};
-};
-const etfMesclarFx=(prev,res,desde,agoraISO)=>{const b={atual:null,dia:{},desde:null,ultimaOK:null,erro:null,...(prev||{})};
-  const dia={...b.dia,...res.dia};const novo=res.atual!=null||Object.keys(res.dia).length>0;
-  return{atual:res.atual!=null?res.atual:b.atual,dia,desde:!res.erros.some(e=>e.startsWith("histórico"))&&desde?(b.desde&&b.desde<desde?b.desde:desde):b.desde,ultimaOK:novo?agoraISO:b.ultimaOK,ultimaTentativa:agoraISO,erro:res.erros.length?res.erros.join(" · "):null};};
 const ETF_F=[{key:"ticker",label:"Ticker"},{key:"nome",label:"Nome"},{key:"moeda",label:"Moeda do preço",type:"select",options:["USD","BRL"]},{key:"indiceRef",label:"Índice"},{key:"quantidade",label:"Qtd",type:"number",step:"0.00000001"},{key:"precoMedio",label:"Preço de compra",type:"number",step:"0.01"},{key:"precoAtual",label:"Preço atual",type:"number",step:"0.01"},{key:"taxaAdm",label:"TxAdm%",type:"number",step:"0.01"},{key:"dataCompra",label:"Data",type:"date"},{key:"corretora",label:"Corretora"}];
 const etfUsd=v=>v==null||v===""||!isFinite(Number(v))?"—":Number(v).toLocaleString("en-US",{style:"currency",currency:"USD"});
 const etfMesFmt=ym=>`${ym.slice(5)}/${ym.slice(0,4)}`;
@@ -1029,23 +775,6 @@ function CrTab({data,setData,cot,base,setBase,onRefresh,loading}){const P=useT()
 
 /* FIIs — fix DY lookup with uppercase ticker */
 const FII_F=[{key:"ticker",label:"Ticker",placeholder:"HGLG11"},{key:"quantidade",label:"Qtd",type:"number",step:"1"},{key:"precoMedio",label:"PM",type:"number",step:"0.01"},{key:"ultDivManual",label:"Último Dividendo (manual)",type:"number",step:"0.01",placeholder:"Deixe vazio para usar o padrão"},{key:"dataCompra",label:"Data",type:"date"}];
-/* ===== FIIs: cotação atual via brapi.dev (plano gratuito: token próprio, 1 ativo por requisição, atraso ~30 min) ===== */
-const fiiParseBrapi=j=>{const r=j&&Array.isArray(j.results)?j.results[0]:null;const o=r&&(r.data&&typeof r.data==="object"&&!Array.isArray(r.data)?r.data:r);const preco=o?Number(o.regularMarketPrice):NaN;if(!(preco>0))return null;
-  let ts=o.regularMarketTime;if(typeof ts==="number")ts=new Date(ts>1e12?ts:ts*1000).toISOString();else if(ts){const d=new Date(ts);ts=isNaN(d)?null:d.toISOString();}else ts=null;return{preco,ts};};
-const fiiBuscarCotacoes=async(tickers,token,fetchFn)=>{
-  const f=fetchFn||((...a)=>fetch(...a));const quotes={},erros=[];const lista=[...new Set((tickers||[]).map(t=>String(t||"").trim().toUpperCase()).filter(Boolean))];
-  if(!token)return{quotes,erros:["informe o token da brapi (gratuito) para buscar as cotações"],pedidos:lista};
-  const tk=encodeURIComponent(token);
-  for(const t of lista){let ok=false,fatal=false;
-    for(const url of[`https://brapi.dev/api/quote/${t}?token=${tk}`,`https://brapi.dev/api/v2/stocks/quote?symbols=${t}&token=${tk}`]){
-      try{const c=typeof AbortController!=="undefined"?new AbortController():null;const tm=c?setTimeout(()=>c.abort(),12000):null;let r;try{r=await f(url,c?{signal:c.signal}:undefined);}finally{if(tm)clearTimeout(tm);}
-        if(r.status===401||r.status===403){erros.push("token da brapi inválido ou sem acesso ("+r.status+")");fatal=true;break;}
-        if(!r.ok)continue;const q=fiiParseBrapi(await r.json());if(q){quotes[t]=q;ok=true;break;}}
-      catch(e){if(url.includes("/v2/"))erros.push(t+": "+(e&&e.name==="AbortError"?"tempo esgotado":String((e&&e.message)||e)));}}
-    if(fatal)break;if(!ok&&!erros.some(e=>e.startsWith(t+":")))erros.push(t+": sem cotação");}
-  return{quotes,erros,pedidos:lista};};
-const fiiMesclarCotacoes=(prev,res,agoraISO)=>{const b={quotes:{},ultimaOK:null,...(prev||{})};const quotes={...b.quotes};Object.entries(res.quotes).forEach(([t,q])=>{quotes[t]={...q,buscadoEm:agoraISO};});
-  return{quotes,ultimaTentativa:agoraISO,ultimaOK:Object.keys(res.quotes).length?agoraISO:b.ultimaOK,erro:res.erros.length?[...new Set(res.erros)].join(" · "):null};};
 function FiiTab({data,setData,fiiMkt,setFiiMkt}){const P=useT();const S=useS();const[sub,setSub]=useState("cart");const[fiiMktLF,setFiiMktLF]=useState(()=>ld("ip8-fiiMktLF",null));
   const[fcot,setFcot]=useState(()=>ld("ip8-fiiCot",{quotes:{},ultimaOK:null,ultimaTentativa:null,erro:null}));const[brapiTk,setBrapiTk]=useState(()=>ld("ip8-brapiToken",""));const[tkTxt,setTkTxt]=useState(()=>ld("ip8-brapiToken",""));const[fLoading,setFLoading]=useState(false);
   const fRef=useRef({busy:false,data,fcot,brapiTk});fRef.current.data=data;fRef.current.fcot=fcot;fRef.current.brapiTk=brapiTk;
@@ -1999,9 +1728,7 @@ function PrfTab({prfRef,sim,setSim,defSim}){const P=useT();const S=useS();const[
 }
 
 /* Tesouro Direto: parser de CSV/colagem (acha Data e Valor pelo conteúdo, em qualquer ordem de colunas) */
-const tdParseLine=(line)=>{const sep=line.includes("\t")?"\t":line.includes(";")?";":",";const r=[];let cur="",q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"')q=!q;else if(c===sep&&!q){r.push(cur.trim());cur="";}else cur+=c;}r.push(cur.trim());return r;};
 const tdISODate=s=>{s=(s||"").trim();let m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);if(m)return`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(m)return`${m[1]}-${m[2]}-${m[3]}`;return null;};
-const tdMoney=s=>{s=(s||"").replace(/R\$|\s/g,"");if(!/^-?\d[\d.,]*$/.test(s))return null;if(s.includes(","))s=s.replace(/\./g,"").replace(",",".");else if((s.match(/\./g)||[]).length>1)s=s.replace(/\./g,"");const v=Math.abs(Number(s));return isFinite(v)&&v>0?v:null;};
 const tdParseText=text=>{const items=[];text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).forEach(line=>{
   const cells=tdParseLine(line);const di=cells.findIndex(c=>tdISODate(c));if(di<0)return;
   const dt=tdISODate(cells[di]);let val=null;

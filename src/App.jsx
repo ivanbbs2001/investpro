@@ -76,7 +76,7 @@ function calcRF(item){
   // Se não tem data início, usa dias até vencimento como fallback
   let diasHolding=365; // default 1 year
   if(item.dataInicio){
-    diasHolding=Math.max(1,Math.floor((new Date()-new Date(item.dataInicio))/(864e5)));
+    diasHolding=Math.max(1,Math.floor((new Date()-new Date(item.dataInicio))/(864e5)))+365;   // sem vencimento: alíquota ao fim dos 12 meses projetados
   }
   // For future projection (título ainda não venceu), use the larger of holding or projected total
   if(item.dataInicio&&item.dataVencimento){
@@ -89,9 +89,9 @@ function calcRF(item){
   const rendLiq=rendAnual*(1-irPct/100);
   const rendMensal=rendLiq/12;
   
-  // Taxa real = taxa líquida de IR (para tributados) ou taxa nominal (isentos)
+  // "taxaReal" (chave mantida por compatibilidade) = taxa LÍQUIDA de IR, não taxa real acima da inflação (para tributados) ou taxa nominal (isentos)
   const taxaReal=irPct>0?(taxaNom*(1-irPct/100)).toFixed(2):taxaNom.toFixed(2);
-  const taxaRealMensal=(Number(taxaReal)/12).toFixed(2);
+  const taxaRealMensal=((Math.pow(1+Number(taxaReal)/100,1/12)-1)*100).toFixed(2);   // taxa mensal equivalente (composta), não /12
   
   return{rendAnual:rendAnual.toFixed(2),rendLiq:rendLiq.toFixed(2),rendMensal:rendMensal.toFixed(2),taxaReal,taxaRealMensal,taxaNom:taxaNom.toFixed(2),taxaNomLabel,irPct};
 }
@@ -408,7 +408,7 @@ function VencSec({title,items,P}){const[open,setOpen]=useState(false);const S=us
 /* ═══ RF — columns reordered: ...Valor, Rend.Anual, Rend.Líq, Rend.Mensal, IR%, ... + 3 pie charts ═══ */
 const RF_FIELDS=[{key:"dataInicio",label:"Data Início",type:"date"},{key:"dataVencimento",label:"Vencimento",type:"date"},{key:"tipo",label:"Tipo",type:"select",options:["CDB","CRA","CRI","LCI","LCA","Debênture","Tesouro Selic","Tesouro IPCA+","Tesouro Prefixado","LC","Outro"]},{key:"indexador",label:"Indexador",type:"select",options:["Pré","CDI","IPCA","Selic","IGPM","Outro"]},{key:"taxa",label:"Taxa (%)",type:"number",step:"0.01"},{key:"valor",label:"Valor aplicado",type:"number",step:"0.01"},{key:"status",label:"Status",type:"select",options:["Ativo","Resgatado"]},{key:"dataResgate",label:"Data do resgate (se resgatado)",type:"date"},{key:"valorResgate",label:"Valor recebido no resgate (se resgatado)",type:"number",step:"0.01"},{key:"valorAtualManual",label:"Valor atual informado (opcional — vale no lugar da estimativa)",type:"number",step:"0.01",wide:true},{key:"rendAnual",label:"Rend.Anual",readOnly:true},{key:"rendMensal",label:"Rend.Mensal",readOnly:true},{key:"irPct",label:"IR % (estimado)",readOnly:true},{key:"emissor",label:"Emissor"},{key:"banco",label:"Banco",type:"select",useBanks:true}];
 // Columns: Data, Venc, Tipo, Idx, TaxaNom, TaxaReal, Valor, Rend.Anual, Rend.Líq, Rend.Mensal, IR%, Emissor, Banco
-const RF_C=[{k:"dataInicio",l:"Data"},{k:"dataVencimento",l:"Venc."},{k:"tipo",l:"Tipo"},{k:"indexador",l:"Idx"},{k:"taxaNomLabel",l:"Taxa Nom."},{k:"taxaReal",l:"Taxa Real"},{k:"taxaRealMensal",l:"Tx Real/Mês"},{k:"valor",l:"Aplicado"},{k:"_atual",l:"Valor atual (est.)"},{k:"rendLiq",l:"Rend.Líq."},{k:"rendMensal",l:"Rend.Mensal"},{k:"emissor",l:"Emissor"}];
+const RF_C=[{k:"dataInicio",l:"Data"},{k:"dataVencimento",l:"Venc."},{k:"tipo",l:"Tipo"},{k:"indexador",l:"Idx"},{k:"taxaNomLabel",l:"Taxa Nom."},{k:"taxaReal",l:"Taxa Líq."},{k:"taxaRealMensal",l:"Tx Líq./Mês"},{k:"valor",l:"Aplicado"},{k:"_atual",l:"Valor atual (est.)"},{k:"rendLiq",l:"Rend.Líq."},{k:"rendMensal",l:"Rend.Mensal"},{k:"emissor",l:"Emissor"}];
 
 function RFTab({data:dataAll,setData,banks,dashRetPct,rfCart}){const P=useT();const S=useS();const[sub,setSub]=useState("lista");const{sb,sd,onS,doS}=useSort("dataVencimento","asc");const[rebalVal,setRebalVal]=useState("");
   const[slIPCA,setSlIPCA]=useState(45);const[slCDI,setSlCDI]=useState(30);const[slPre,setSlPre]=useState(25);

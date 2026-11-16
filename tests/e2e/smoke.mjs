@@ -33,12 +33,23 @@ async function rodar(browser,seed,rotulo){
   await p.waitForTimeout(500);await ctx.close();
   console.log(`${erros.length?"FALHOU":"ok    "} ${rotulo} (${ABAS.length} abas)`);erros.forEach(e=>console.log("   -",e));return erros.length;
 }
+/* Barreiras de erro: com um registro inválido, o app deve mostrar a tela de erro (e não ficar em branco) */
+async function quebra(browser,dados,aba,esperado,rotulo){const ctx=await browser.newContext(),p=await ctx.newPage();let f=0;
+  await p.route(url=>!url.href.startsWith(`http://127.0.0.1:${PORT}`),r=>r.abort());
+  await p.addInitScript(d=>{Object.entries(d).forEach(([k,v])=>localStorage.setItem(k,JSON.stringify(v)));},dados);
+  await p.goto(BASE);await p.waitForTimeout(1200);
+  if(aba){await p.locator(".dsb").getByText(new RegExp(aba+"\\s*$")).first().click();await p.waitForTimeout(400);}
+  const t=await p.locator("body").innerText();if(!t.includes(esperado))f=1;
+  if(aba&&!f){await p.locator(".dsb").getByText(/Dashboard\s*$/).first().click();await p.waitForTimeout(300);if((await p.locator("body").innerText()).includes(esperado))f=1;}
+  await ctx.close();console.log(`${f?"FALHOU":"ok    "} ${rotulo}`);return f;}
 const srv=spawn("npx",["vite","preview","--port",String(PORT),"--host","127.0.0.1","--strictPort"],{stdio:"ignore"});
 let falhas=0;
 try{
   for(let i=0;i<50;i++){try{if((await fetch(BASE)).ok)break;}catch{}await new Promise(r=>setTimeout(r,200));}
   const b=await chromium.launch();
   falhas+=await rodar(b,false,"app vazio");falhas+=await rodar(b,true,"app com dados");
+  falhas+=await quebra(b,{"ip8-evo":[null]},"Evolução","Esta tela encontrou um erro","dado inválido numa aba → só a aba mostra erro");
+  falhas+=await quebra(b,{"ip8-rf":[null]},null,"O app encontrou um erro ao abrir","dado inválido na carga → tela de recuperação");
   await b.close();
 }finally{srv.kill();}
 process.exit(falhas?1:0);

@@ -3,33 +3,37 @@ import{etfAtualBRL,etfCustoBRL,etfFxEm,etfAddMes,etfYM}from"./etf.js";
 import{crPatrimonio,crFetchJSON}from"./cripto.js";
 export const AN_CLASSES=[{k:"rf",l:"Renda Fixa"},{k:"inco",l:"INCO"},{k:"td",l:"Tesouro Direto"},{k:"ac",l:"Ações"},{k:"etfs",l:"ETFs"},{k:"fiis",l:"FIIs"},{k:"cr",l:"Cripto"}];
 export const AN_MERCADO=["etfs","fiis","cr"];           // classes avaliadas a mercado (as demais ficam ao custo no app)
-const n=x=>Number(x)||0;const soma=(a,f)=>a.reduce((s,i)=>s+f(i),0);
+const n=x=>Number(x)||0;
+/* Preço de uma ação: cotação (brapi) > preço digitado > preço médio */
+export const anAcPreco=(i,cot)=>{const q=cot&&cot.quotes&&cot.quotes[String(i.ticker||"").trim().toUpperCase()];return q&&q.preco>0?q.preco:(n(i.precoAtual)||n(i.precoMedio));};const soma=(a,f)=>a.reduce((s,i)=>s+f(i),0);
 /* e: {rf,inco,ac,etfs,fiis,cr,tdApos,tdLiza,cotCr,fx,fiiCot} */
 export const anClasses=e=>{
   const fx=e.fx||{},q=(e.fiiCot&&e.fiiCot.quotes)||{};
   return{rf:e.rfValor!=null?n(e.rfValor):soma(e.rf||[],i=>n(i.valor)),inco:soma(e.inco||[],i=>n(i.valor)),td:soma(e.tdApos||[],i=>n(i.valor))+soma(e.tdLiza||[],i=>n(i.valor)),
-    ac:soma(e.ac||[],i=>n(i.quantidade)*n(i.precoMedio)),
+    ac:soma(e.ac||[],i=>n(i.quantidade)*anAcPreco(i,e.acCot)),
     etfs:soma(e.etfs||[],i=>(i.moeda==="USD"&&!n(fx.atual))?etfCustoBRL(i,fx):etfAtualBRL(i,fx)),
     fiis:soma(e.fiis||[],i=>{const c=q[String(i.ticker||"").toUpperCase()];return n(i.quantidade)*(c&&c.preco>0?c.preco:n(i.precoMedio));}),
     cr:crPatrimonio(e.cr||[],e.cotCr,"mercado")};};
-export const anSnapshot=(e,hojeISO)=>{const classes=anClasses(e);const total=Object.values(classes).reduce((a,b)=>a+b,0);const o={ym:hojeISO.slice(0,7),t:hojeISO,classes,total};if(e.rfValor!=null)o.rfEst=true;return o;};
+export const anSnapshot=(e,hojeISO)=>{const classes=anClasses(e);const total=Object.values(classes).reduce((a,b)=>a+b,0);const o={ym:hojeISO.slice(0,7),t:hojeISO,classes,total};if(e.rfValor!=null)o.rfEst=true;o.acMkt=true;return o;};
 /* Atualiza só o mês corrente; devolve a MESMA referência se nada mudou (evita laços de efeito) */
 export const anUpsert=(snaps,snap)=>{if(!snap||!(snap.total>0))return snaps;const a=(snaps||{})[snap.ym];
-  if(a&&Math.abs(a.total-snap.total)<0.5&&Object.keys(snap.classes).every(k=>Math.abs((a.classes[k]||0)-snap.classes[k])<0.5)&&!!a.rfEst===!!snap.rfEst)return snaps;
-  return{...(snaps||{}),[snap.ym]:{t:snap.t,classes:snap.classes,total:snap.total,...(snap.rfEst?{rfEst:true}:{})}};};
+  if(a&&Math.abs(a.total-snap.total)<0.5&&Object.keys(snap.classes).every(k=>Math.abs((a.classes[k]||0)-snap.classes[k])<0.5)&&!!a.rfEst===!!snap.rfEst&&!!a.acMkt===!!snap.acMkt)return snaps;
+  return{...(snaps||{}),[snap.ym]:{t:snap.t,classes:snap.classes,total:snap.total,...(snap.rfEst?{rfEst:true}:{}),...(snap.acMkt?{acMkt:true}:{})}};};
 export const anMesclarSnaps=(a,b)=>{const o={...(a||{})};Object.entries(b||{}).forEach(([k,v])=>{if(!o[k]||String(v.t||"")>String(o[k].t||""))o[k]=v;});return o;};
 /* Compras (+) e vendas (−) por mês nas classes a mercado, em R$ */
 export const anFluxos=e=>{const f={},add=(d,v)=>{const m=etfYM(d);if(!/^\d{4}-\d{2}$/.test(m)||!isFinite(v))return;f[m]=(f[m]||0)+v;};const fx=e.fx||{};
   (e.etfs||[]).forEach(i=>{if(!i.dataCompra)return;const q=n(i.quantidade),pm=n(i.precoMedio);add(i.dataCompra,i.moeda==="USD"?q*pm*(etfFxEm(fx,i.dataCompra)||n(fx.atual)):q*pm);});
   (e.fiis||[]).forEach(i=>{if(i.dataCompra)add(i.dataCompra,n(i.quantidade)*n(i.precoMedio));});
   (e.cr||[]).forEach(i=>{if(!i.dataCompra)return;add(i.dataCompra,i.tipo==="Venda"?-n(i.valorRecebido):n(i.valorInvestido));});return f;};
-const vMercado=(s,comRf)=>AN_MERCADO.reduce((a,k)=>a+((s.classes&&s.classes[k])||0),0)+(comRf?((s.classes&&s.classes.rf)||0):0);
+const vMercado=(s,comRf,comAc)=>AN_MERCADO.reduce((a,k)=>a+((s.classes&&s.classes[k])||0),0)+(comRf?((s.classes&&s.classes.rf)||0):0)+(comAc?((s.classes&&s.classes.ac)||0):0);
+/* Compras de ações por mês (R$), pelo preço médio na data da compra */
+export const anFluxosAc=e=>{const f={};(e.ac||[]).forEach(i=>{const m=etfYM(i.dataCompra);if(/^\d{4}-\d{2}$/.test(m)){const v=n(i.quantidade)*n(i.precoMedio);if(v)f[m]=(f[m]||0)+v;}});return f;};
 /* Série mensal; retorno só entre meses consecutivos (Dietz simples: fluxo no meio do mês) */
 /* fluxosRf: aportes em renda fixa por mês; a RF só entra no retorno quando os DOIS meses têm RF estimada (rfEst) */
-export const anSerie=(snaps,fluxos,fluxosRf)=>{const ks=Object.keys(snaps||{}).sort();return ks.map((ym,i)=>{const s=snaps[ym],p=i>0&&ks[i-1]===etfAddMes(ym,-1)?snaps[ks[i-1]]:null;
-  const comRf=!!(p&&s.rfEst&&p.rfEst),v1=vMercado(s,comRf),v0=p?vMercado(p,comRf):null,F=((fluxos&&fluxos[ym])||0)+(comRf?((fluxosRf&&fluxosRf[ym])||0):0);let ret=null,lucro=null;
+export const anSerie=(snaps,fluxos,fluxosRf,fluxosAc)=>{const ks=Object.keys(snaps||{}).sort();return ks.map((ym,i)=>{const s=snaps[ym],p=i>0&&ks[i-1]===etfAddMes(ym,-1)?snaps[ks[i-1]]:null;
+  const comRf=!!(p&&s.rfEst&&p.rfEst),comAc=!!(p&&s.acMkt&&p.acMkt),v1=vMercado(s,comRf,comAc),v0=p?vMercado(p,comRf,comAc):null,F=((fluxos&&fluxos[ym])||0)+(comRf?((fluxosRf&&fluxosRf[ym])||0):0)+(comAc?((fluxosAc&&fluxosAc[ym])||0):0);let ret=null,lucro=null;
   if(p&&v0+F/2>0){lucro=v1-v0-F;ret=lucro/(v0+F/2)*100;}
-  return{ym,total:s.total,mercado:v1,comRf,delta:p?s.total-p.total:null,deltaPct:p&&p.total>0?(s.total/p.total-1)*100:null,fluxo:F,lucro,retorno:ret};});};
+  return{ym,total:s.total,mercado:v1,comRf,comAc,delta:p?s.total-p.total:null,deltaPct:p&&p.total>0?(s.total/p.total-1)*100:null,fluxo:F,lucro,retorno:ret};});};
 export const anParseBCB=arr=>{const o={};(Array.isArray(arr)?arr:[]).forEach(x=>{const m=String(x.data||"").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);const v=Number(String(x.valor).replace(",","."));if(m&&isFinite(v))o[`${m[3]}-${m[2]}`]=v;});return o;};
 export const anBuscarIndices=async(fetchFn,meses=36)=>{const f=fetchFn||((...a)=>fetch(...a));const r={cdi:{},ipca:{},erros:[]};
   for(const[k,c]of[["cdi",4391],["ipca",433]]){try{r[k]=anParseBCB(await crFetchJSON(f,`https://api.bcb.gov.br/dados/serie/bcdata.sgs.${c}/dados/ultimos/${meses}?formato=json`));}catch(e){r.erros.push(k.toUpperCase()+": "+String((e&&e.message)||e));}}return r;};

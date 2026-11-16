@@ -61,3 +61,12 @@ test('reserva usa o valor atual estimado quando informado',()=>{
   const rf=[{id:"a",tipo:"Tesouro Selic",valor:"10000"}];
   expect(A.anReserva(rf,null,1000).valor).toBe(10000);expect(A.anReserva(rf,null,1000,{a:11000}).meses).toBe(11);
 });
+
+test('ações: cotação > preço digitado > PM; entram no retorno só com dois meses marcados acMkt',()=>{
+  const cot={quotes:{PETR4:{preco:40}}};
+  expect(A.anAcPreco({ticker:"petr4 ",precoMedio:"30",precoAtual:"35"},cot)).toBe(40);expect(A.anAcPreco({ticker:"VALE3",precoMedio:"30",precoAtual:"35"},cot)).toBe(35);expect(A.anAcPreco({ticker:"VALE3",precoMedio:"30"},null)).toBe(30);
+  expect(A.anClasses({ac:[{ticker:"PETR4",quantidade:"10",precoMedio:"30"}],acCot:cot}).ac).toBe(400);
+  expect(A.anFluxosAc({ac:[{ticker:"PETR4",quantidade:"10",precoMedio:"30",dataCompra:"2026-11-03"}]})).toEqual({"2026-11":300});
+  const snaps={"2026-09":{classes:{ac:1000},total:1000},"2026-10":{classes:{ac:1100},total:1100,acMkt:true},"2026-11":{classes:{ac:1500},total:1500,acMkt:true}};
+  const s=A.anSerie(snaps,{},{},{"2026-11":300});expect(s[1].comAc).toBe(false);expect(s[1].lucro).toBeCloseTo(0);expect(s[2].comAc).toBe(true);expect(s[2].lucro).toBeCloseTo(100);
+});

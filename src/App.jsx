@@ -7,7 +7,7 @@ import{fsReal,entrarComGoogle,sair,observarLogin}from"./firebase.js";
 import{useCloudSync}from"./useCloudSync.js";
 import{rfCarteira,rfResgatado}from"./lib/rf.js";
 import{getIR,temIR}from"./lib/rf.js";
-import{anClasses,anSnapshot,anUpsert,anMesclarSnaps,anFluxos,anSerie,anBuscarIndices,anAcumulado,anAlocacao,anAporte,anDespesaMedia,anReserva}from"./lib/analise.js";
+import{anFluxosAc,anAcPreco,anClasses,anSnapshot,anUpsert,anMesclarSnaps,anFluxos,anSerie,anBuscarIndices,anAcumulado,anAlocacao,anAporte,anDespesaMedia,anReserva}from"./lib/analise.js";
 import{SYNC_LEGADO,syncTamanhoBytes,SYNC_LIMITE_BYTES}from"./lib/sync.js";
 const TC=createContext();const useT=()=>useContext(TC);
 const DARK={bg:"#0b0f14",surface:"#12171e",surfaceAlt:"#181e27",border:"#1e2630",borderLight:"#2a3342",text:"#e2e8f0",textDim:"#8494a7",textMuted:"#556677",accent:"#10b981",accentGlow:"rgba(16,185,129,0.12)",red:"#ef4444",redDim:"rgba(239,68,68,0.12)",blue:"#3b82f6",blueDim:"rgba(59,130,246,0.12)",yellow:"#f59e0b",yellowDim:"rgba(245,158,11,0.12)",purple:"#a855f7",purpleDim:"rgba(168,85,247,0.12)",orange:"#f97316",orangeDim:"rgba(249,115,22,0.12)",cyan:"#06b6d4",cyanDim:"rgba(6,182,212,0.12)",hover:"rgba(255,255,255,0.04)",sidebarBg:"#0f1319",thBg:"#181e27"};
@@ -30,8 +30,11 @@ const fP=v=>(v!=null&&v!=="")?Number(v).toLocaleString("pt-BR",{minimumFractionD
 const fD=d=>{if(!d)return"—";const p=d.split("-");return`${p[2]}/${p[1]}/${p[0]}`;};
 const mL=d=>{if(!d)return"";const[y,m]=d.split("-");const ms=["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];return`${ms[parseInt(m)-1]}/${y}`;};
 function diasV(dv){if(!dv)return 9999;return Math.max(0,Math.floor((new Date(dv)-new Date())/(864e5)));}
+/* Avisos de falha visíveis (em vez de engolir o erro em silêncio) */
+const avisar=msg=>{try{if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("ip8-aviso",{detail:String(msg)}));}catch(e){console.warn(msg,e);}};
+const msgErro=e=>e&&e.name==="AbortError"?"tempo esgotado":String((e&&e.message)||e);
 let RATES={cdi12m:14.15,ipca12m:4.5,igpm:3.5};
-async function fetchRates(){try{const[c,i]=await Promise.all([fetch("https://api.bcb.gov.br/dados/serie/bcdata.sgs.4392/dados/ultimos/1?formato=json").then(r=>r.ok?r.json():null),fetch("https://api.bcb.gov.br/dados/serie/bcdata.sgs.13522/dados/ultimos/1?formato=json").then(r=>r.ok?r.json():null)]);if(c&&c.length)RATES.cdi12m=Number(c[0].valor);if(i&&i.length)RATES.ipca12m=Number(i[0].valor);sv(SK.rates,RATES);}catch{}}
+async function fetchRates(){try{const[c,i]=await Promise.all([fetch("https://api.bcb.gov.br/dados/serie/bcdata.sgs.4392/dados/ultimos/1?formato=json").then(r=>r.ok?r.json():null),fetch("https://api.bcb.gov.br/dados/serie/bcdata.sgs.13522/dados/ultimos/1?formato=json").then(r=>r.ok?r.json():null)]);if(c&&c.length)RATES.cdi12m=Number(c[0].valor);if(i&&i.length)RATES.ipca12m=Number(i[0].valor);sv(SK.rates,RATES);if(!c||!i)avisar("Banco Central não respondeu para "+(!c&&!i?"CDI e IPCA":!c?"CDI":"IPCA")+" de 12 meses; mantidas as taxas anteriores.");}catch(e){avisar("Falha ao buscar CDI/IPCA de 12 meses no Banco Central ("+msgErro(e)+"); mantidas as taxas anteriores.");}}
 
 /* calcRF: Compound interest + correct IR based on holding period
    CDI: Daily rate = (1+CDI_aa)^(1/252)-1. Title daily = daily * (pct/100). Annual = (1+title_daily)^252-1
@@ -142,8 +145,9 @@ function calcINCO(item){
   const rendPeriodo=rendBruto*fatorIR;
   const rendMensal=rendPeriodo/meses;
   
-  const taxaReal=(ix==="Pré")?taxaNomAnual.toFixed(2):(taxaNomAnual*fatorIR).toFixed(2);
-  const taxaRealMensal=(Number(taxaReal)/12).toFixed(2);
+  // "taxaReal" (chave mantida por compatibilidade) = taxa LÍQUIDA de IR; o IR vale também para Pré (o rendimento acima já desconta)
+  const taxaReal=(taxaNomAnual*fatorIR).toFixed(2);
+  const taxaRealMensal=((Math.pow(1+Number(taxaReal)/100,1/12)-1)*100).toFixed(2);
   
   return{rendPeriodo:rendPeriodo.toFixed(2),rendMensal:rendMensal.toFixed(2),taxaReal,taxaRealMensal,taxaNom:taxaNomAnual.toFixed(2),taxaNomLabel,irPct};
 }
@@ -224,7 +228,6 @@ const FII_MKT_DEF=[
   {ticker:"KNCA11",nome:"Kinea Crédito Agro",setor:"Rural",preco:95,pvp:0.92,dy:12.0,ultDiv:0.95},
 ];
 /* FII dividend = último dividendo × quantidade de cotas */
-function getFiiData(ticker,mkt){const tk=(ticker||"").toUpperCase();const m=mkt.find(f=>f.ticker.toUpperCase()===tk);return m||null;}
 
 function useS(){const P=useT();return useMemo(()=>({
   i:{background:P.surfaceAlt,border:`1px solid ${P.borderLight}`,borderRadius:6,padding:"8px 12px",fontSize:13,color:P.text,fontFamily:"inherit",width:"100%",boxSizing:"border-box",outline:"none"},
@@ -308,9 +311,9 @@ function CRUD({title,icon,fields,data,setData,columns,renderRow,footerRow,cards,
 /* INDICES */
 const BCB_M={"SELIC (meta)":{c:432,m:"l",u:"%"},"SELIC (mês)":{c:4390,m:"l",u:"%"},"SELIC (acum.jan)":{c:4390,m:"a",u:"%"},"IPCA (mês)":{c:433,m:"l",u:"%"},"IPCA (acum.12m)":{c:13522,m:"l",u:"%"},"CDI (mês)":{c:4391,m:"l",u:"%"},"CDI (acum.12m)":{c:4392,m:"l",u:"%"},"Poupança":{c:195,m:"l",u:"%"},"Dólar":{c:1,m:"l",u:"R$"},"IGPM":{c:189,m:"l",u:"%"},"Sal.Mínimo":{c:1619,m:"l",u:"R$"}};
 async function fBCB(c,n){try{const r=await fetch(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.${c}/dados/ultimos/${n}?formato=json`);if(!r.ok)return null;return await r.json();}catch{return null;}}
-async function fAllInd(){const res={};await Promise.all(Object.entries(BCB_M).map(async([n,cfg])=>{const d=await fBCB(cfg.c,cfg.m==="a"?60:3);if(!d||!d.length)return;if(cfg.m==="l"){res[n]={valor:d[d.length-1].valor,data:d[d.length-1].data,unidade:cfg.u};}else{const yr=new Date().getFullYear();const yd=d.filter(x=>parseInt(x.data.split("/")[2])===yr);const ac=yd.reduce((a,x)=>a*(1+Number(x.valor)/100),1);res[n]={valor:((ac-1)*100).toFixed(2),data:yd.length?yd[yd.length-1].data:"",unidade:cfg.u};}}));try{const r=await fetch("https://api.dadosdemercado.com.br/v1/macro/incc-m");if(r.ok){const d=await r.json();if(d&&d.length)res["INCC"]={valor:d[d.length-1].value,data:d[d.length-1].date,unidade:"%"};}}catch{}return res;}
+async function fAllInd(){const res={};await Promise.all(Object.entries(BCB_M).map(async([n,cfg])=>{const d=await fBCB(cfg.c,cfg.m==="a"?60:3);if(!d||!d.length)return;if(cfg.m==="l"){res[n]={valor:d[d.length-1].valor,data:d[d.length-1].data,unidade:cfg.u};}else{const yr=new Date().getFullYear();const yd=d.filter(x=>parseInt(x.data.split("/")[2])===yr);const ac=yd.reduce((a,x)=>a*(1+Number(x.valor)/100),1);res[n]={valor:((ac-1)*100).toFixed(2),data:yd.length?yd[yd.length-1].data:"",unidade:cfg.u};}}));try{const r=await fetch("https://api.dadosdemercado.com.br/v1/macro/incc-m");if(r.ok){const d=await r.json();if(d&&d.length)res["INCC"]={valor:d[d.length-1].value,data:d[d.length-1].date,unidade:"%"};}else avisar("INCC não atualizado (fonte respondeu "+r.status+").");}catch(e){avisar("INCC não atualizado ("+msgErro(e)+").");}return res;}
 function IndTab({data,setData,prfRef,setPrfRef}){const P=useT();const S=useS();const[f,setF]=useState(false);const[lf,setLf]=useState(()=>ld(SK.indLF,null));const[ed,setEd]=useState(false);const[dr,setDr]=useState(data);const[edPrf,setEdPrf]=useState(false);const[prfDr,setPrfDr]=useState(prfRef||DEF_PRF_REF);useEffect(()=>{setDr(data);},[data]);useEffect(()=>{setPrfDr(prfRef||DEF_PRF_REF);},[prfRef]);
-  const doF=async()=>{setF(true);try{const r=await fAllInd();await fetchRates();const u=data.map(it=>r[it.nome]?{...it,valor:r[it.nome].valor,dataRef:r[it.nome].data,unidade:r[it.nome].unidade}:it);Object.entries(r).forEach(([n,v])=>{if(!u.find(x=>x.nome===n))u.push({nome:n,valor:v.valor,dataRef:v.data,unidade:v.unidade});});setData(u);const now=new Date().toISOString();setLf(now);sv(SK.indLF,now);}catch{}setF(false);};
+  const doF=async()=>{setF(true);try{const r=await fAllInd();await fetchRates();const u=data.map(it=>r[it.nome]?{...it,valor:r[it.nome].valor,dataRef:r[it.nome].data,unidade:r[it.nome].unidade}:it);Object.entries(r).forEach(([n,v])=>{if(!u.find(x=>x.nome===n))u.push({nome:n,valor:v.valor,dataRef:v.data,unidade:v.unidade});});setData(u);const now=new Date().toISOString();setLf(now);sv(SK.indLF,now);}catch(e){avisar("Falha ao atualizar os índices ("+msgErro(e)+").");}setF(false);};
   const da=useRef(false);useEffect(()=>{if(da.current)return;da.current=true;const c=ld(SK.rates,null);if(c)RATES=c;const l=ld(SK.indLF,null);if(!l||(Date.now()-new Date(l).getTime())>86400000)doF();},[]);
   return(<div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:10}}><div style={{fontSize:22,fontWeight:700}}>Índices</div><div style={{display:"flex",gap:8}}>{ed?(<React.Fragment><button style={S.btnO} onClick={()=>{setDr(data);setEd(false);}}>Cancelar</button><button style={S.btn()} onClick={()=>{setData(dr);setEd(false);}}>Salvar</button></React.Fragment>):(<React.Fragment><button style={S.btnO} onClick={()=>setEd(true)}>Editar</button><button style={S.btn()} onClick={doF} disabled={f}>{f?"...":"⟳ Atualizar"}</button></React.Fragment>)}</div></div><div style={{fontSize:11,color:P.textMuted,marginBottom:6}}>CDI 12m: {RATES.cdi12m.toFixed(2)}% · IPCA 12m: {RATES.ipca12m.toFixed(2)}%</div>{lf&&<div style={{fontSize:12,color:P.textDim,marginBottom:20,padding:"8px 12px",background:P.surfaceAlt,borderRadius:6,display:"inline-block"}}>Última atualização: <b>{new Date(lf).toLocaleDateString("pt-BR")}</b> às <b>{new Date(lf).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</b></div>}<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:14}}>{dr.map((it,idx)=>(<div key={it.nome} style={{background:P.surface,border:`1px solid ${P.border}`,borderRadius:10,padding:"14px 18px"}}><div style={{fontSize:11,fontWeight:600,color:P.textDim,textTransform:"uppercase",marginBottom:6}}>{it.nome}</div>{ed?(<input style={{...S.i,fontSize:16,fontWeight:700}} type="number" step="0.01" value={dr[idx].valor||""} onChange={e=>{const n=[...dr];n[idx]={...n[idx],valor:e.target.value};setDr(n);}}/>):(<div style={{fontSize:20,fontWeight:700,color:it.valor?P.text:P.textMuted}}>{it.valor?(it.unidade==="R$"?fmt(it.valor):fP(it.valor)):"—"}</div>)}</div>))}</div>
     {/* PRF References */}
@@ -403,7 +406,7 @@ const extratoPdfRows=(linhas,ignorar=[])=>{
   return rows;
 };
 
-function VencSec({title,items,P}){const[open,setOpen]=useState(false);const S=useS();if(!items.length)return null;const total=items.reduce((a,i)=>a+(Number(i.valor)||0),0);return(<div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:700,color:title.includes("30d")?P.red:title.includes("180")?P.yellow:P.accent,marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:8}} onClick={()=>setOpen(!open)}><span style={{fontSize:14}}>{open?"▼":"▶"}</span>{title} ({items.length}) — Total: {fmt(total)}</div>{open&&<div style={{display:"flex",gap:8,flexWrap:"wrap",paddingLeft:22}}>{items.map(i=>(<div key={i.id} style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:6,padding:"8px 12px",fontSize:11}}><b>{i.tipo||i.incorporadora||""}</b> {i.emissor||i.empreendimento||""} — {fmt(i.valor)} — {fD(i.dataVencimento)} ({diasV(i.dataVencimento)}d)</div>))}</div>}</div>);}
+function VencSec({title,items,P}){const[open,setOpen]=useState(false);if(!items.length)return null;const total=items.reduce((a,i)=>a+(Number(i.valor)||0),0);return(<div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:700,color:title.includes("30d")?P.red:title.includes("180")?P.yellow:P.accent,marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:8}} onClick={()=>setOpen(!open)}><span style={{fontSize:14}}>{open?"▼":"▶"}</span>{title} ({items.length}) — Total: {fmt(total)}</div>{open&&<div style={{display:"flex",gap:8,flexWrap:"wrap",paddingLeft:22}}>{items.map(i=>(<div key={i.id} style={{background:P.surfaceAlt,border:`1px solid ${P.border}`,borderRadius:6,padding:"8px 12px",fontSize:11}}><b>{i.tipo||i.incorporadora||""}</b> {i.emissor||i.empreendimento||""} — {fmt(i.valor)} — {fD(i.dataVencimento)} ({diasV(i.dataVencimento)}d)</div>))}</div>}</div>);}
 
 /* ═══ RF — columns reordered: ...Valor, Rend.Anual, Rend.Líq, Rend.Mensal, IR%, ... + 3 pie charts ═══ */
 const RF_FIELDS=[{key:"dataInicio",label:"Data Início",type:"date"},{key:"dataVencimento",label:"Vencimento",type:"date"},{key:"tipo",label:"Tipo",type:"select",options:["CDB","CRA","CRI","LCI","LCA","Debênture","Tesouro Selic","Tesouro IPCA+","Tesouro Prefixado","LC","Outro"]},{key:"indexador",label:"Indexador",type:"select",options:["Pré","CDI","IPCA","Selic","IGPM","Outro"]},{key:"taxa",label:"Taxa (%)",type:"number",step:"0.01"},{key:"valor",label:"Valor aplicado",type:"number",step:"0.01"},{key:"status",label:"Status",type:"select",options:["Ativo","Resgatado"]},{key:"dataResgate",label:"Data do resgate (se resgatado)",type:"date"},{key:"valorResgate",label:"Valor recebido no resgate (se resgatado)",type:"number",step:"0.01"},{key:"valorAtualManual",label:"Valor atual informado (opcional — vale no lugar da estimativa)",type:"number",step:"0.01",wide:true},{key:"rendAnual",label:"Rend.Anual",readOnly:true},{key:"rendMensal",label:"Rend.Mensal",readOnly:true},{key:"irPct",label:"IR % (estimado)",readOnly:true},{key:"emissor",label:"Emissor"},{key:"banco",label:"Banco",type:"select",useBanks:true}];
@@ -458,7 +461,7 @@ function RFTab({data:dataAll,setData,banks,dashRetPct,rfCart}){const P=useT();co
         <div style={{fontSize:11,color:P.textMuted,marginBottom:16}}>Ajuste a meta de alocação (total deve ser 100%)</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:16}}>
           {[{l:"IPCA",val:slIPCA,set:v=>{const d=v-slIPCA;setSlIPCA(v);setSlCDI(Math.max(0,slCDI-Math.ceil(d/2)));setSlPre(Math.max(0,100-v-Math.max(0,slCDI-Math.ceil(d/2))));},c:P.yellow},
-            {l:"CDI",val:slCDI,set:v=>{const d=v-slCDI;setSlCDI(v);setSlPre(Math.max(0,100-slIPCA-v));},c:P.blue},
+            {l:"CDI",val:slCDI,set:v=>{setSlCDI(v);setSlPre(Math.max(0,100-slIPCA-v));},c:P.blue},
             {l:"Prefixado",val:slPre,set:v=>{setSlPre(v);setSlCDI(Math.max(0,100-slIPCA-v));},c:P.purple}
           ].map(s=>(<div key={s.l}><div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4}}><span style={{color:s.c,fontWeight:600}}>{s.l}</span><span style={{fontWeight:700}}>{s.val}%</span></div><input type="range" min="0" max="100" value={s.val} onChange={e=>s.set(Number(e.target.value))} style={{width:"100%",accentColor:s.c}}/></div>))}
         </div>
@@ -540,7 +543,7 @@ function RFTab({data:dataAll,setData,banks,dashRetPct,rfCart}){const P=useT();co
 
 /* INCO sortable + taxa real + totals */
 const INCO_F=[{key:"dataInicio",label:"Data Início",type:"date"},{key:"dataVencimento",label:"Vencimento",type:"date"},{key:"risco",label:"Risco",type:"select",options:["A","B","C","D","E"]},{key:"empreendimento",label:"Empreendimento"},{key:"indexador",label:"Indexador",type:"select",options:["Pré","CDI","IPCA","IGPM","INCC","Dólar","Outro"]},{key:"taxa",label:"Taxa (%)",type:"number",step:"0.01"},{key:"valor",label:"Valor",type:"number",step:"0.01"},{key:"isCriCra",label:"CRI/CRA",type:"checkbox",checkLabel:"Isento de IR (CRI/CRA)"},{key:"rendPeriodo",label:"Rend.Período",readOnly:true},{key:"rendMensal",label:"Rend.Mensal",readOnly:true}];
-const IN_C=[{k:"dataInicio",l:"Data"},{k:"dataVencimento",l:"Venc."},{k:"risco",l:"Risco"},{k:"empreendimento",l:"Empreend."},{k:"indexador",l:"Idx"},{k:"taxaNomLabel",l:"Taxa Nom."},{k:"taxaReal",l:"Taxa Real"},{k:"taxaRealMensal",l:"Tx Real/Mês"},{k:"valor",l:"Valor"},{k:"rendPeriodo",l:"Rend.Período"},{k:"rendMensal",l:"Rend.Mensal"}];
+const IN_C=[{k:"dataInicio",l:"Data"},{k:"dataVencimento",l:"Venc."},{k:"risco",l:"Risco"},{k:"empreendimento",l:"Empreend."},{k:"indexador",l:"Idx"},{k:"taxaNomLabel",l:"Taxa Nom."},{k:"taxaReal",l:"Taxa Líq."},{k:"taxaRealMensal",l:"Tx Líq./Mês"},{k:"valor",l:"Valor"},{k:"rendPeriodo",l:"Rend.Período"},{k:"rendMensal",l:"Rend.Mensal"}];
 const IDX_COLORS={CDI:{c:"#3b82f6",bg:"rgba(59,130,246,0.12)"},IPCA:{c:"#f59e0b",bg:"rgba(245,158,11,0.12)"},Pré:{c:"#a855f7",bg:"rgba(168,85,247,0.12)"},IGPM:{c:"#06b6d4",bg:"rgba(6,182,212,0.12)"},INCC:{c:"#ec4899",bg:"rgba(236,72,153,0.12)"},Selic:{c:"#3b82f6",bg:"rgba(59,130,246,0.12)"},"Dólar":{c:"#10b981",bg:"rgba(16,185,129,0.12)"},Outro:{c:"#64748b",bg:"rgba(100,116,139,0.12)"}};
 const RISCO_COLORS={A:{c:"#10b981",bg:"rgba(16,185,129,0.12)"},B:{c:"#3b82f6",bg:"rgba(59,130,246,0.12)"},C:{c:"#f59e0b",bg:"rgba(245,158,11,0.12)"},D:{c:"#f97316",bg:"rgba(249,115,22,0.12)"},E:{c:"#ef4444",bg:"rgba(239,68,68,0.12)"}};
 function IncoTab({data,setData}){const P=useT();const S=useS();const[sub,setSub]=useState("lista");const{sb,sd,onS,doS}=useSort("dataVencimento","asc");
@@ -586,7 +589,24 @@ function IncoTab({data,setData}){const P=useT();const S=useS();const[sub,setSub]
 
 /* AC, ETF, CR */
 const AC_F=[{key:"ticker",label:"Ticker"},{key:"empresa",label:"Empresa"},{key:"setor",label:"Setor"},{key:"quantidade",label:"Qtd",type:"number",step:"1"},{key:"precoMedio",label:"PM",type:"number",step:"0.01"},{key:"precoAtual",label:"Atual",type:"number",step:"0.01"},{key:"dataCompra",label:"Data",type:"date"},{key:"corretora",label:"Corretora"}];
-function AcTab({data,setData}){const P=useT();const S=useS();const tI=data.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0),tA=data.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoAtual)||Number(i.precoMedio)||0),0),lp=tA-tI;return<CRUD title="Ações" icon="▲" fields={AC_F} data={data} setData={setData} cards={<React.Fragment><SC label="Investido" value={fmt(tI)} color={P.yellow} dim={P.yellowDim}/><SC label="Atual" value={fmt(tA)} color={P.blue} dim={P.blueDim}/><SC label="L/P" value={fmt(lp)} color={lp>=0?P.accent:P.red} dim={lp>=0?P.accentGlow:P.redDim}/></React.Fragment>} columns={["Ticker","Empresa","Qtd","PM","Atual","Investido","Atual","L/P","Corretora"]} renderRow={i=>{const inv=(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),at=(Number(i.quantidade)||0)*(Number(i.precoAtual)||Number(i.precoMedio)||0),l=at-inv;return(<React.Fragment><td style={{...S.td,fontWeight:700}}>{i.ticker||"—"}</td><td style={S.td}>{i.empresa||"—"}</td><td style={S.td}>{i.quantidade||"—"}</td><td style={S.td}>{fmt(i.precoMedio)}</td><td style={S.td}>{fmt(i.precoAtual)}</td><td style={S.td}>{fmt(inv)}</td><td style={S.td}>{fmt(at)}</td><td style={{...S.td,color:l>=0?P.accent:P.red,fontWeight:600}}>{fmt(l)}</td><td style={S.td}>{i.corretora||"—"}</td></React.Fragment>);}}/>;
+/* Cotações de ações pela brapi (mesmo token gratuito dos FIIs; 1 ticker por requisição, atraso ~30 min) */
+const acPreco=anAcPreco;
+function AcTab({data,setData}){const P=useT();const S=useS();
+  const[cot,setCot]=useState(()=>ld("ip8-acCot",{quotes:{},ultimaOK:null,ultimaTentativa:null,erro:null}));const[tk,setTk]=useState(()=>ld("ip8-brapiToken",""));const[tkTxt,setTkTxt]=useState("");const[load,setLoad]=useState(false);
+  const ref=useRef({busy:false});ref.current.data=data;ref.current.cot=cot;ref.current.tk=tk;
+  useEffect(()=>{sv("ip8-acCot",cot);},[cot]);
+  const atualizar=useCallback(async()=>{const r=ref.current;if(r.busy)return;const tks=r.data.map(i=>i.ticker).filter(Boolean);if(!tks.length)return;r.busy=true;setLoad(true);
+    try{const res=await fiiBuscarCotacoes(tks,r.tk);setCot(prev=>fiiMesclarCotacoes(prev,res,new Date().toISOString()));}catch(e){setCot(prev=>({...prev,ultimaTentativa:new Date().toISOString(),erro:msgErro(e)}));}finally{r.busy=false;setLoad(false);}},[]);
+  const chave=data.map(i=>String(i.ticker||"").trim().toUpperCase()).filter(Boolean).sort().join(",");
+  useEffect(()=>{if(!tk||!chave)return;const precisa=()=>{const c=ref.current.cot||{};return chave.split(",").some(t=>!(c.quotes&&c.quotes[t]))||!c.ultimaTentativa||Date.now()-new Date(c.ultimaTentativa).getTime()>30*60*1000;};
+    if(precisa())atualizar();const t=setInterval(()=>{if(precisa())atualizar();},5*60*1000);return()=>clearInterval(t);},[tk,chave,atualizar]);
+  const q=t=>cot.quotes&&cot.quotes[String(t||"").trim().toUpperCase()];const semCot=data.filter(i=>i.ticker&&!q(i.ticker)).length;
+  const tI=data.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0),tA=data.reduce((a,i)=>a+(Number(i.quantidade)||0)*acPreco(i,cot),0),lp=tA-tI;
+  const quando=cot.ultimaOK?`${new Date(cot.ultimaOK).toLocaleDateString("pt-BR")} ${new Date(cot.ultimaOK).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}`:null;
+  const barra=(<span style={{display:"inline-flex",gap:8,alignItems:"center",flexWrap:"wrap",fontSize:11,color:P.textDim}}>
+    {tk?<React.Fragment><span>Cotações (brapi, ~30 min de atraso): {quando?<b>{quando}</b>:"ainda não buscadas"}{semCot>0&&` · ${semCot} sem cotação (usa o preço digitado ou o PM)`}</span>{cot.erro&&<span style={{color:P.red}}>⚠ {cot.erro}</span>}</React.Fragment>
+      :<React.Fragment><span>Sem token da brapi: usando o preço digitado. Cole o token gratuito (o mesmo dos FIIs):</span><input style={{...S.i,width:180,fontSize:11,padding:"4px 8px"}} placeholder="token brapi" value={tkTxt} onChange={e=>setTkTxt(e.target.value)}/><button style={S.btnO} onClick={()=>{const v=tkTxt.trim();if(v){sv("ip8-brapiToken",v);setTk(v);}}}>Salvar</button></React.Fragment>}</span>);
+  return<CRUD title="Ações" icon="▲" subtitle={barra} headerExtra={tk&&data.length>0?<button style={S.btnO} onClick={atualizar} disabled={load}>{load?"...":"⟳ Cotações"}</button>:null} fields={AC_F} data={data} setData={setData} cards={<React.Fragment><SC label="Investido" value={fmt(tI)} color={P.yellow} dim={P.yellowDim}/><SC label="Atual" value={fmt(tA)} color={P.blue} dim={P.blueDim}/><SC label="L/P" value={fmt(lp)} color={lp>=0?P.accent:P.red} dim={lp>=0?P.accentGlow:P.redDim}/></React.Fragment>} columns={["Ticker","Empresa","Qtd","PM","Atual","Investido","Atual","L/P","Corretora"]} renderRow={i=>{const inv=(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),pa=acPreco(i,cot),at=(Number(i.quantidade)||0)*pa,l=at-inv,temQ=!!q(i.ticker);return(<React.Fragment><td style={{...S.td,fontWeight:700}}>{i.ticker||"—"}</td><td style={S.td}>{i.empresa||"—"}</td><td style={S.td}>{i.quantidade||"—"}</td><td style={S.td}>{fmt(i.precoMedio)}</td><td style={S.td} title={temQ?"cotação brapi":"preço digitado / PM"}>{fmt(pa)}{!temQ&&<span style={{fontSize:9,color:P.textMuted,marginLeft:4}}>manual</span>}</td><td style={S.td}>{fmt(inv)}</td><td style={S.td}>{fmt(at)}</td><td style={{...S.td,color:l>=0?P.accent:P.red,fontWeight:600}}>{fmt(l)}</td><td style={S.td}>{i.corretora||"—"}</td></React.Fragment>);}}/>;
 }
 const ETF_F=[{key:"ticker",label:"Ticker"},{key:"nome",label:"Nome"},{key:"moeda",label:"Moeda do preço",type:"select",options:["USD","BRL"]},{key:"indiceRef",label:"Índice"},{key:"quantidade",label:"Qtd",type:"number",step:"0.00000001"},{key:"precoMedio",label:"Preço de compra",type:"number",step:"0.01"},{key:"precoAtual",label:"Preço atual",type:"number",step:"0.01"},{key:"taxaAdm",label:"TxAdm%",type:"number",step:"0.01"},{key:"dataCompra",label:"Data",type:"date"},{key:"corretora",label:"Corretora"}];
 const etfUsd=v=>v==null||v===""||!isFinite(Number(v))?"—":Number(v).toLocaleString("en-US",{style:"currency",currency:"USD"});
@@ -673,7 +693,7 @@ const crCampos=tipo=>[
   {key:"dataCompra",label:"Data",type:"date"},
   {key:"exchange",label:"Exchange"},{key:"wallet",label:"Custódia (carteira)"}
 ];
-const crBaixar=(nome,texto)=>{try{const b=new Blob(["﻿"+texto],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=nome;document.body.appendChild(a);a.click();document.body.removeChild(a);}catch{}};
+const crBaixar=(nome,texto)=>{try{const b=new Blob(["﻿"+texto],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=nome;document.body.appendChild(a);a.click();document.body.removeChild(a);}catch(e){avisar("Não foi possível baixar o arquivo ("+msgErro(e)+").");}};
 const crPct=v=>v==null?"—":`${v>=0?"+":""}${v.toLocaleString("pt-BR",{maximumFractionDigits:2})}%`;
 const crHora=iso=>{if(!iso)return"nunca";const d=new Date(iso);return d.toLocaleDateString("pt-BR")+" "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});};
 
@@ -868,20 +888,7 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
   const saveCatMap=m=>{setCatMap(m);sv("ip8-catMap",m);};
   // Parse CSV/OFX credit card statement
   // PDF text extraction via CDN
-  const[showPdfDebug,setShowPdfDebug]=useState(false);const[pdfRawText,setPdfRawText]=useState("");
-  const handlePdfDebug=async(e)=>{const file=e.target.files[0];if(!file)return;setPdfCsvLoading(true);
-    try{
-      const pdfjsLib=await loadPdfJs();
-      const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;
-      const rows=[];
-      for(let i=1;i<=pdf.numPages;i++){const page=await pdf.getPage(i);const content=await page.getTextContent();
-        const byY={};content.items.forEach(item=>{const y=Math.round(item.transform[5]);if(!byY[y])byY[y]=[];byY[y].push({x:Math.round(item.transform[4]),str:item.str});});
-        Object.keys(byY).sort((a,b)=>Number(b)-Number(a)).forEach(y=>{const rowItems=byY[y].sort((a,b)=>a.x-b.x);rows.push(`Y${y}: `+rowItems.map(i=>`[${i.str}]`).join(" "));});
-      }
-      setPdfRawText(rows.join("\n"));setShowPdfDebug(true);
-    }catch(err){alert("Erro: "+err.message);}
-    setPdfCsvLoading(false);e.target.value="";
-  };
+  const[pdfRawText,setPdfRawText]=useState("");
   const loadPdfJs=()=>new Promise((res,rej)=>{if(window.pdfjsLib)return res(window.pdfjsLib);const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";s.onload=()=>{window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";res(window.pdfjsLib);};s.onerror=rej;document.head.appendChild(s);});
   // PDF to CSV converter
   const extractPdfText=async(file)=>(await pdfLerLinhas(file,loadPdfJs)).map(c=>c.join(" ")).join("\n");
@@ -918,7 +925,7 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
     const lines=text.split("\n").map(l=>l.trim()).filter(l=>l);const items=[];
     // Parse CSV respecting quoted fields: "value,with,commas"
     const parseCSVLine=(line)=>{const result=[];let cur="",inQ=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){inQ=!inQ;}else if((c===","||c===";"||c==="\t")&&!inQ){result.push(cur.trim());cur="";}else{cur+=c;}}result.push(cur.trim());return result;};
-    const detectSep=(line)=>{if(line.includes(";"))return";";if(line.includes("\t"))return"\t";return",";};
+    
     if(fileName.endsWith(".ofx")){
       const txns=text.split("<STMTTRN>").slice(1);
       txns.forEach(txn=>{const getField=(f)=>{const m=txn.match(new RegExp(`<${f}>(.*?)(?:<|\\n)`));return m?m[1].trim():"";};
@@ -1010,7 +1017,6 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
   const aM=[...new Set(data.filter(i=>i.data).map(i=>i.data.slice(0,7)))].sort().reverse();if(!aM.includes(mF))aM.unshift(mF);
   const pieData=cS.map(([l,v],i)=>({label:l,value:v,color:PC[i%PC.length]}));
   const pieFixVar=[{label:"Gastos Fixos",value:despFixo,color:P.blue},{label:"Gastos Eventuais",value:despVar,color:P.orange}];
-  const pieRecDesp=[{label:"Receitas",value:rec,color:P.accent},{label:"Despesas",value:desp,color:P.red}];
   
   const doSave=item=>{
     // Auto-mark as fixo if category is in AUTO_FIXO list
@@ -1183,7 +1189,7 @@ const RelogioSB=React.memo(function RelogioSB({sbTextDim,sbTextMuted}){const[n,s
   return(<React.Fragment><div style={{fontSize:20,fontWeight:300,color:sbTextDim,marginTop:6,letterSpacing:"2px",fontVariantNumeric:"tabular-nums"}}>{n.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</div><div style={{fontSize:11,color:sbTextMuted,marginTop:2}}>{n.toLocaleDateString("pt-BR")}</div><div style={{fontSize:10,color:sbTextMuted,textTransform:"capitalize"}}>{n.toLocaleDateString("pt-BR",{weekday:"long"})}</div></React.Fragment>);});
 function AnaliseTab({e,snaps,alvos,setAlvos,reservaIds,setReservaIds,idx,idxLoad,buscar}){const P=useT();const S=useS();const hoje=localISO(new Date());
   const[aporte,setAporte]=useState("");
-  const cls=anClasses(e);const serie=anSerie(snaps,anFluxos(e),e.rfFluxos);const serieDesc=[...serie].reverse();
+  const cls=anClasses(e);const serie=anSerie(snaps,anFluxos(e),e.rfFluxos,anFluxosAc(e));const serieDesc=[...serie].reverse();
   const acum=idx?anAcumulado(serie,idx.cdi,idx.ipca):anAcumulado(serie,null,null);
   const al=anAlocacao(cls,alvos);const sug=anAporte(cls,alvos,Number(aporte)||0);
   const desp=anDespesaMedia(e.orc,hoje,6);const ids=reservaIds;const res=anReserva(e.rf,ids,desp.media,e.rfValores);const sel=new Set(ids==null?res.itens.map(i=>i.id):ids);
@@ -1198,9 +1204,9 @@ function AnaliseTab({e,snaps,alvos,setAlvos,reservaIds,setReservaIds,idx,idxLoad
       {serie.length===0?<div style={{fontSize:12,color:P.textMuted}}>O primeiro registro é criado automaticamente ao abrir o app com dados lançados.</div>:<div>
         <div style={{display:"flex",alignItems:"flex-end",gap:6,height:90,marginBottom:12}}>{serie.slice(-24).map(s=>(<div key={s.ym} title={`${s.ym}: ${fmt(s.total)}`} style={{flex:1,maxWidth:40,background:P.accent,opacity:0.85,height:Math.max(3,s.total/maxT*90),borderRadius:"3px 3px 0 0"}}/>))}</div>
         <div style={{maxHeight:300,overflow:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>{["Mês","Patrimônio","Variação","Var. %"].map(x=><th key={x} style={S.th}>{x}</th>)}</tr></thead><tbody>{serieDesc.map(s=>(<tr key={s.ym}><td style={S.td}>{s.ym.slice(5)}/{s.ym.slice(0,4)}</td><td style={S.td}>{fmt(s.total)}</td><td style={{...S.td,color:cor(s.delta)}}>{s.delta==null?"—":fmt(s.delta)}</td><td style={{...S.td,color:cor(s.deltaPct)}}>{pc(s.deltaPct)}</td></tr>))}</tbody></table></div></div>}
-      <div style={{fontSize:10,color:P.textMuted,marginTop:8,lineHeight:1.5}}>Cada mês guarda o último valor visto enquanto o app estava aberto (não o fechamento exato do mês). ETFs, FIIs, cripto e renda fixa (valor estimado na curva) entram a mercado; INCO, tesouro e ações ficam ao valor lançado/custo. A variação inclui aportes.</div></div>
+      <div style={{fontSize:10,color:P.textMuted,marginTop:8,lineHeight:1.5}}>Cada mês guarda o último valor visto enquanto o app estava aberto (não o fechamento exato do mês). ETFs, FIIs, cripto, ações (cotação brapi ou preço digitado) e renda fixa (valor estimado na curva) entram a mercado; INCO e tesouro ficam ao valor lançado. A variação inclui aportes.</div></div>
 
-    <div style={{...S.card,marginBottom:20}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={h()}>Retorno da carteira a mercado (ETFs + FIIs + Cripto; + Renda Fixa estimada a partir do 2º mês com RF) × CDI e IPCA</div><button style={S.btnO} disabled={idxLoad} onClick={buscar}>{idxLoad?"…":"↻ CDI/IPCA"}</button></div>
+    <div style={{...S.card,marginBottom:20}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={h()}>Retorno da carteira a mercado (ETFs + FIIs + Cripto; Renda Fixa estimada e Ações entram a partir do 2º mês registrado com elas) × CDI e IPCA</div><button style={S.btnO} disabled={idxLoad} onClick={buscar}>{idxLoad?"…":"↻ CDI/IPCA"}</button></div>
       {idx&&idx.erro&&<div style={{fontSize:11,color:P.red,marginBottom:8}}>⚠ {idx.erro}</div>}
       {acum?<div style={{display:"flex",gap:24,flexWrap:"wrap",fontSize:13,marginBottom:12}}><span>Carteira: <b style={{color:cor(acum.carteira)}}>{pc(acum.carteira)}</b></span><span>CDI: <b>{pc(acum.cdi)}</b></span><span>IPCA: <b>{pc(acum.ipca)}</b></span><span style={{color:P.textMuted}}>{acum.meses} mês(es) com cálculo</span></div>:<div style={{fontSize:12,color:P.textMuted,marginBottom:8}}>Precisa de pelo menos dois meses seguidos de registro para calcular o retorno.</div>}
       {serie.some(s=>s.retorno!=null)&&<table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>{["Mês","Valor a mercado","Aportes líquidos","Lucro","Retorno","CDI","IPCA"].map(x=><th key={x} style={S.th}>{x}</th>)}</tr></thead><tbody>{serieDesc.filter(s=>s.retorno!=null).map(s=>(<tr key={s.ym}><td style={S.td}>{s.ym.slice(5)}/{s.ym.slice(0,4)}</td><td style={S.td}>{fmt(s.mercado)}</td><td style={S.td}>{fmt(s.fluxo)}</td><td style={{...S.td,color:cor(s.lucro)}}>{fmt(s.lucro)}</td><td style={{...S.td,color:cor(s.retorno),fontWeight:600}}>{pc(s.retorno)}</td><td style={S.td}>{idx&&idx.cdi&&idx.cdi[s.ym]!=null?pc(idx.cdi[s.ym]):"—"}</td><td style={S.td}>{idx&&idx.ipca&&idx.ipca[s.ym]!=null?pc(idx.ipca[s.ym]):"—"}</td></tr>))}</tbody></table>}
@@ -1245,8 +1251,23 @@ function NuvemPanel({sync,authUser,onLogin,onLogout,loginErro,bytes,legado}){con
     {msg&&<div style={{fontSize:12,color:P.accent,marginTop:8}}>{msg}</div>}
     {bk&&<div style={{marginTop:10,fontSize:12}}>{bk.length===0?"Nenhuma cópia ainda (a primeira é criada na próxima gravação).":bk.map(id=><div key={id} style={{display:"flex",gap:10,alignItems:"center",padding:"3px 0"}}><span>{id}</span><button style={{...S.btnO,padding:"2px 10px"}} onClick={()=>rest(id)}>Restaurar</button></div>)}<div style={{color:P.textMuted,marginTop:4}}>São mantidas as 14 cópias mais recentes (uma por dia).</div></div>}
   </div>);}
+/* Barreira de erro: uma aba quebrada não derruba o app inteiro */
+class ErroAba extends React.Component{constructor(p){super(p);this.state={erro:null};}
+  static getDerivedStateFromError(erro){return{erro};}
+  componentDidCatch(erro,info){console.error("Erro na aba",this.props.nome,erro,info);}
+  render(){if(!this.state.erro)return this.props.children;const P=this.props.P;
+    return(<div style={{padding:24,border:`1px solid ${P.red}`,borderRadius:10,background:P.surface,maxWidth:720}}>
+      <div style={{fontSize:16,fontWeight:700,color:P.red,marginBottom:8}}>⚠ Esta tela encontrou um erro</div>
+      <div style={{fontSize:13,color:P.textDim,lineHeight:1.6,marginBottom:12}}>As outras abas continuam funcionando e seus dados não foram apagados. Baixe um backup antes de mexer em qualquer coisa e me envie a mensagem abaixo.</div>
+      <pre style={{fontSize:11,color:P.textMuted,background:P.surfaceAlt,padding:10,borderRadius:6,whiteSpace:"pre-wrap",wordBreak:"break-word",marginBottom:14}}>{String((this.state.erro&&this.state.erro.message)||this.state.erro)}</pre>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}><button style={{padding:"8px 14px",borderRadius:6,border:"none",background:P.blue,color:"#fff",cursor:"pointer",fontFamily:"inherit",fontWeight:600}} onClick={this.props.onBackup}>⬇ Baixar backup</button>
+        <button style={{padding:"8px 14px",borderRadius:6,border:`1px solid ${P.border}`,background:"transparent",color:P.text,cursor:"pointer",fontFamily:"inherit"}} onClick={()=>this.setState({erro:null})}>Tentar de novo</button></div></div>);}}
+function Avisos(){const P=useT();const[l,setL]=useState([]);
+  useEffect(()=>{const h=e=>{const id=uid(),msg=e.detail;setL(a=>a.some(x=>x.msg===msg)?a:[...a.slice(-3),{id,msg}]);setTimeout(()=>setL(a=>a.filter(x=>x.id!==id)),12000);};window.addEventListener("ip8-aviso",h);return()=>window.removeEventListener("ip8-aviso",h);},[]);
+  if(!l.length)return null;
+  return(<div style={{position:"fixed",right:16,bottom:16,zIndex:200,display:"flex",flexDirection:"column",gap:8,maxWidth:380}}>{l.map(x=>(<div key={x.id} style={{background:P.surface,border:`1px solid ${P.yellow}`,borderRadius:8,padding:"10px 12px",fontSize:12,color:P.text,boxShadow:"0 4px 16px rgba(0,0,0,0.25)",display:"flex",gap:10,alignItems:"flex-start"}}><span style={{flex:1,lineHeight:1.5}}>⚠ {x.msg}</span><button style={{background:"transparent",border:"none",color:P.textMuted,cursor:"pointer",fontSize:14,fontFamily:"inherit"}} onClick={()=>setL(a=>a.filter(y=>y.id!==x.id))}>✕</button></div>))}</div>);}
 /* Backup externo: o navegador não grava arquivo sozinho, então o app lembra (a cada 7 dias) e baixa com um clique */
-function baixarBackupJSON(payload){try{const b=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;const d=new Date();const dd=String(d.getDate()).padStart(2,"0"),mm=String(d.getMonth()+1).padStart(2,"0");a.download=`backup_contas_${dd}${mm}${d.getFullYear()}.json`;document.body.appendChild(a);a.click();document.body.removeChild(a);sv("ip8-lastExport",new Date().toISOString());}catch{}}
+function baixarBackupJSON(payload){try{const b=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;const d=new Date();const dd=String(d.getDate()).padStart(2,"0"),mm=String(d.getMonth()+1).padStart(2,"0");a.download=`backup_contas_${dd}${mm}${d.getFullYear()}.json`;document.body.appendChild(a);a.click();document.body.removeChild(a);sv("ip8-lastExport",new Date().toISOString());}catch(e){avisar("Não foi possível baixar o backup ("+msgErro(e)+").");}}
 function BackupLembrete({gerar,temDados}){const P=useT();const S=useS();const[,forca]=useState(0);
   const ult=ld("ip8-lastExport",null),soneca=ld("ip8-bkSnooze",null);const dias=ult?Math.floor((Date.now()-new Date(ult).getTime())/864e5):null;
   if(!temDados||(dias!=null&&dias<7)||(soneca&&Date.now()-new Date(soneca).getTime()<864e5))return null;
@@ -1387,11 +1408,9 @@ function LiquidezPanel({rf,inco,P,S}){
   const alvo=new Date(dataAlvo+"T00:00:00");
   const diasAte=Math.max(0,Math.floor((alvo-hoje)/864e5));
   // RF vencendo até a data alvo
-  const rfLiq=rf.filter(i=>i.dataVencimento&&new Date(i.dataVencimento+"T00:00:00")<=alvo);
   const rfJaVenc=rf.filter(i=>i.dataVencimento&&new Date(i.dataVencimento+"T00:00:00")<hoje);
   const rfNoAlvo=rf.filter(i=>i.dataVencimento&&new Date(i.dataVencimento+"T00:00:00")>=hoje&&new Date(i.dataVencimento+"T00:00:00")<=alvo);
   // INCO vencendo até a data alvo
-  const incoLiq=inco.filter(i=>i.dataVencimento&&new Date(i.dataVencimento+"T00:00:00")<=alvo);
   const incoJaVenc=inco.filter(i=>i.dataVencimento&&new Date(i.dataVencimento+"T00:00:00")<hoje);
   const incoNoAlvo=inco.filter(i=>i.dataVencimento&&new Date(i.dataVencimento+"T00:00:00")>=hoje&&new Date(i.dataVencimento+"T00:00:00")<=alvo);
   const totalRF=rfNoAlvo.reduce((a,i)=>a+(Number(i.valor)||0),0);
@@ -1991,7 +2010,6 @@ function ImoveisTab({sim,setSim,defSim}){const P=useT();const S=useS();
       // FV do saldo - PV das parcelas pagas = 0 → resolve numericamente
       const calcMesesQuitacao=(saldo,fin,taxa,parcela)=>{if(saldo>=fin)return 0;if(saldo<=0)return prazoFinMeses;let saldoFin=fin,saldoPoup=saldo;for(let m=1;m<=prazoFinMeses;m++){saldoPoup=saldoPoup*(1+taxa);if(saldoPoup>=saldoFin){return m;}saldoFin=saldoFin*(1+taxa)-parcela;if(saldoFin<=0)return m;}return prazoFinMeses;};
       const mesesParaQuitar=calcMesesQuitacao(saldoPosEntrada,finCaixa,iM,parcelaCaixa);
-      const economiaJuros=totalJurosCaixa-(parcelaCaixa*mesesParaQuitar-finCaixa*(mesesParaQuitar<prazoFinMeses?1:0));
       // Perpetuidade: rendimento mensal do saldo cobre a parcela?
       const rendMensalSaldo=saldoPosEntrada*iM;const poupSustentaFin=rendMensalSaldo>=parcelaCaixa;
       const deficit=custoAq-poupTotal,viavel=deficit<=0;
@@ -2180,7 +2198,7 @@ function ProjecoesTab({tG,tRM,retPct,orc,sim,setSim,defSim}){const P=useT();cons
   const ap=Number(aporteMensal)||0;const infl=Number(ipca)||4.5;
   const retNom=(retPct||0);// taxa mensal nominal da carteira atual
   const retReal=Math.max(0,((1+retNom/100)/(1+infl/100/12)-1)*100);// taxa real mensal
-  const retAnualNom=retNom*12;const retAnualReal=retReal*12;
+  const retAnualReal=retReal*12;
 
   // Patrimônio projetado: carteira atual + aportes durante o período
   const patrimonioAtual=tG||0;
@@ -2191,7 +2209,6 @@ function ProjecoesTab({tG,tRM,retPct,orc,sim,setSim,defSim}){const P=useT();cons
 
   // Renda mensal futura: patrimônio × taxa real mensal (perpetuidade)
   const rendaMensalNomFutura=pvNom*(retNom/100);
-  const rendaMensalRealFutura=pvReal*(retReal/100);
   const poderCompraHoje=rendaMensalNomFutura/Math.pow(1+infl/100/12,meses);
 
   // Sugestão de correção do aporte: aporte cresce com IPCA anual
@@ -2339,7 +2356,7 @@ function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc,cotCr,crBase,setCrBase,fxUsd,
   const dashMesNext=()=>{const[y,m]=dashMes.split("-").map(Number);const d=new Date(y,m,1);setDashMes(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);};
   const tRF=crBase==="mercado"&&rfCart?rfCart.valor:rf.reduce((a,i)=>a+(Number(i.valor)||0),0);const rfE=rf.map(i=>({...i,...calcRF(i)}));const mRF=rfE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
   const tIN=inco.reduce((a,i)=>a+(Number(i.valor)||0),0);const inE=inco.map(i=>({...i,...calcINCO(i)}));const mIN=inE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
-  const tAc=ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0);
+  const acCot=ld("ip8-acCot",null);const tAc=ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(crBase==="mercado"?acPreco(i,acCot):(Number(i.precoMedio)||0)),0);
   const tEt=etfs.reduce((a,i)=>a+etfCustoBRL(i,fxUsd),0);
   const tFi=fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0),dFi=fiis.reduce((a,i)=>a+(Number(i.dividendoMensal)||0),0);
   const tCr=crPatrimonio(cr,cotCr,crBase);const tG=tRF+tIN+tAc+tEt+tFi+tCr;const tRM=mRF+mIN+dFi;
@@ -2467,7 +2484,7 @@ function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc,cotCr,crBase,setCrBase,fxUsd,
     </div>
 
     {/* Pie charts + Benchmark */}
-    {tG>0&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}><div style={{...S.card,padding:24}}><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Valor Investido <span style={{textTransform:"none",fontWeight:500}}>(cripto e renda fixa a {crBase==="custo"?"custo":"mercado/estimado"} · <span style={{cursor:"pointer",color:P.accent}} onClick={()=>setCrBase(crBase==="custo"?"mercado":"custo")}>alternar</span>)</span></div><Pie data={patD} size={220}/></div>{tRM>0&&<div style={{...S.card,padding:24}}><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Renda Mensal</div><Pie data={renD} size={220}/></div>}</div>)}
+    {tG>0&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}><div style={{...S.card,padding:24}}><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Valor Investido <span style={{textTransform:"none",fontWeight:500}}>(ações, cripto e renda fixa a {crBase==="custo"?"custo":"mercado/estimado"} · <span style={{cursor:"pointer",color:P.accent}} onClick={()=>setCrBase(crBase==="custo"?"mercado":"custo")}>alternar</span>)</span></div><Pie data={patD} size={220}/></div>{tRM>0&&<div style={{...S.card,padding:24}}><div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:P.textDim,marginBottom:18}}>Renda Mensal</div><Pie data={renD} size={220}/></div>}</div>)}
     {tG>0&&<BenchmarkPanel tG={tG} retPctAnual={retPct*12} P={P} S={S}/>}
     {tG>0&&<LiquidezPanel rf={rf} inco={inco} P={P} S={S}/>}
     {indices.some(i=>i.valor)&&(<div style={S.card}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",color:P.textDim,marginBottom:14}}>Índices</div><div style={{display:"flex",flexWrap:"wrap",gap:14}}>{indices.filter(i=>i.valor).map(i=>(<div key={i.nome} style={{minWidth:100}}><div style={{fontSize:10,color:P.textMuted}}>{i.nome}</div><div style={{fontSize:14,fontWeight:700}}>{i.unidade==="R$"?fmt(i.valor):fP(i.valor)}</div></div>))}</div></div>)}
@@ -2476,9 +2493,20 @@ function Dash({rf,inco,ac,etfs,fiis,cr,indices,orc,cotCr,crBase,setCrBase,fxUsd,
 
 const DEF_IND=[{nome:"Sal.Mínimo",valor:"",unidade:"R$"},{nome:"SELIC (meta)",valor:"",unidade:"%"},{nome:"SELIC (mês)",valor:"",unidade:"%"},{nome:"SELIC (acum.jan)",valor:"",unidade:"%"},{nome:"IPCA (mês)",valor:"",unidade:"%"},{nome:"IPCA (acum.12m)",valor:"",unidade:"%"},{nome:"CDI (mês)",valor:"",unidade:"%"},{nome:"CDI (acum.12m)",valor:"",unidade:"%"},{nome:"Poupança",valor:"",unidade:"%"},{nome:"INCC",valor:"",unidade:"%"},{nome:"IGPM",valor:"",unidade:"%"},{nome:"Dólar",valor:"",unidade:"R$"}];
 
-export default function App(){
+/* Última barreira: erro fora das abas (ex.: dado corrompido na carga) mostra uma tela de recuperação em vez de página em branco */
+class ErroRaiz extends React.Component{constructor(p){super(p);this.state={erro:null};}
+  static getDerivedStateFromError(erro){return{erro};}
+  componentDidCatch(erro,info){console.error("Erro geral",erro,info);}
+  baixar(){try{const o={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith("ip8-"))o[k]=localStorage.getItem(k);}const b=new Blob([JSON.stringify(o,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="investpro_dados_brutos.json";document.body.appendChild(a);a.click();document.body.removeChild(a);}catch(e){console.error(e);}}
+  render(){if(!this.state.erro)return this.props.children;
+    return(<div style={{fontFamily:"system-ui,sans-serif",maxWidth:640,margin:"60px auto",padding:24,border:"1px solid #ef4444",borderRadius:10,background:"#fff",color:"#1a1d23"}}>
+      <div style={{fontSize:18,fontWeight:700,color:"#ef4444",marginBottom:8}}>⚠ O app encontrou um erro ao abrir</div>
+      <div style={{fontSize:13,lineHeight:1.6,marginBottom:12}}>Seus dados não foram apagados: continuam neste navegador e na nuvem. Baixe os dados brutos antes de qualquer coisa e envie a mensagem abaixo para correção.</div>
+      <pre style={{fontSize:11,background:"#f3f4f6",padding:10,borderRadius:6,whiteSpace:"pre-wrap",wordBreak:"break-word",marginBottom:14}}>{String((this.state.erro&&this.state.erro.message)||this.state.erro)}</pre>
+      <div style={{display:"flex",gap:10}}><button style={{padding:"8px 14px",borderRadius:6,border:"none",background:"#2563eb",color:"#fff",cursor:"pointer",fontWeight:600}} onClick={()=>this.baixar()}>⬇ Baixar dados brutos</button><button style={{padding:"8px 14px",borderRadius:6,border:"1px solid #d0d5dd",background:"transparent",cursor:"pointer"}} onClick={()=>window.location.reload()}>Recarregar</button></div></div>);}}
+export default function App(){return(<ErroRaiz><AppInner/></ErroRaiz>);}
+function AppInner(){
   const[authUser,setAuthUser]=useState(null);const[authPronto,setAuthPronto]=useState(false);const[loginErro,setLoginErro]=useState("");
-  const loggedIn=true;
   const[isDark,setIsDark]=useState(()=>ld(SK.theme,"industrial"));const[tab,setTab]=useState("dashboard");
   const[font,setFont]=useState(()=>ld("ip8-font","montserrat"));
   const[rf,setRf]=useState(()=>ld(SK.rf,[]));const[inco,setInco]=useState(()=>ld(SK.inco,[]));
@@ -2509,7 +2537,7 @@ export default function App(){
   useEffect(()=>{sv(SK.snaps,snaps);},[snaps]);useEffect(()=>{sv(SK.alvos,alvos);},[alvos]);useEffect(()=>{sv(SK.reserva,reservaIds);},[reservaIds]);
   const rfAt=useMemo(()=>rf.filter(i=>!rfResgatado(i)),[rf]);
   const hojeD=localISO(new Date());const rfCart=useMemo(()=>rfCarteira(rf,{cdi:bcb&&bcb.cdi,ipca:bcb&&bcb.ipca,cdi12m:RATES.cdi12m,ipca12m:RATES.ipca12m,igpm:RATES.igpm},hojeD),[rf,bcb,hojeD]);
-  useEffect(()=>{const t=setTimeout(()=>{setSnaps(prev=>anUpsert(prev,anSnapshot({rf:rfAt,rfValor:rfCart.valor,inco,ac,etfs,fiis,cr,tdApos,tdLiza,cotCr,fx:fxUsd,fiiCot:ld("ip8-fiiCot",null)},localISO(new Date()))));},3000);return()=>clearTimeout(t);},[rfAt,rfCart,inco,ac,etfs,fiis,cr,tdApos,tdLiza,cotCr,fxUsd]);
+  useEffect(()=>{const t=setTimeout(()=>{setSnaps(prev=>anUpsert(prev,anSnapshot({rf:rfAt,rfValor:rfCart.valor,inco,ac,etfs,fiis,cr,tdApos,tdLiza,cotCr,fx:fxUsd,fiiCot:ld("ip8-fiiCot",null),acCot:ld("ip8-acCot",null)},localISO(new Date()))));},3000);return()=>clearTimeout(t);},[rfAt,rfCart,inco,ac,etfs,fiis,cr,tdApos,tdLiza,cotCr,fxUsd]);
   useEffect(()=>{sv(SK.etfHist,etfHist);},[etfHist]);useEffect(()=>{sv(SK.fxUsd,fxUsd);},[fxUsd]);
   const etfFxDesde=etfs.filter(i=>i.moeda==="USD"&&i.dataCompra).map(i=>i.dataCompra).sort()[0]||"";const etfTemUsd=etfs.some(i=>i.moeda==="USD");
   const fxRefresh=useCallback(async()=>{const r=fxRef.current;if(r.busy)return;const des=r.etfs.filter(i=>i.moeda==="USD"&&i.dataCompra).map(i=>i.dataCompra).sort()[0]||"";const hj=localISO(new Date());if(!r.etfs.some(i=>i.moeda==="USD"))return;
@@ -2541,9 +2569,10 @@ export default function App(){
   const _rfE=rfAt.map(i=>({...i,...calcRF(i)})),_mRF=_rfE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
   const _inE=inco.map(i=>({...i,...calcINCO(i)})),_mIN=_inE.reduce((a,i)=>a+(Number(i.rendMensal)||0),0);
   const _dFi=fiis.reduce((a,i)=>a+(Number(i.dividendoMensal)||0),0);
-  const _tG=(crBase==="mercado"?rfCart.valor:rfAt.reduce((a,i)=>a+(Number(i.valor)||0),0))+inco.reduce((a,i)=>a+(Number(i.valor)||0),0)+ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+etfs.reduce((a,i)=>a+etfCustoBRL(i,fxUsd),0)+fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+crPatrimonio(cr,cotCr,crBase);
+  const _acCot=ld("ip8-acCot",null);
+  const _tG=(crBase==="mercado"?rfCart.valor:rfAt.reduce((a,i)=>a+(Number(i.valor)||0),0))+inco.reduce((a,i)=>a+(Number(i.valor)||0),0)+ac.reduce((a,i)=>a+(Number(i.quantidade)||0)*(crBase==="mercado"?acPreco(i,_acCot):(Number(i.precoMedio)||0)),0)+etfs.reduce((a,i)=>a+etfCustoBRL(i,fxUsd),0)+fiis.reduce((a,i)=>a+(Number(i.quantidade)||0)*(Number(i.precoMedio)||0),0)+crPatrimonio(cr,cotCr,crBase);
   const _tRM=_mRF+_mIN+_dFi;const _retPct=_tG>0?((_tRM/_tG)*100):0;
-  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rfAt} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc} cotCr={cotCr} crBase={crBase} setCrBase={setCrBase} fxUsd={fxUsd} rfCart={rfCart}/>;case"comp":return<CompTab/>;case"ana":return<AnaliseTab e={{rf:rfAt,inco,ac,etfs,fiis,cr,tdApos,tdLiza,orc,cotCr,fx:fxUsd,fiiCot:ld("ip8-fiiCot",null),rfValor:rfCart.valor,rfFluxos:rfCart.fluxos,rfValores:rfValores}} idx={bcb} idxLoad={bcbLoad} buscar={bcbBuscar} snaps={snaps} alvos={alvos} setAlvos={setAlvos} reservaIds={reservaIds} setReservaIds={setReservaIds}/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"proj":return<ProjecoesTab tG={_tG} tRM={_tRM} retPct={_retPct} orc={orc} sim={simProj} setSim={setSimProj} defSim={DEF_SIM_PROJ}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct} rfCart={rfCart}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"td":return<TDTab apos={tdApos} setApos={setTdApos} liza={tdLiza} setLiza={setTdLiza}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs} hist={etfHist} setHist={setEtfHist} fx={fxUsd} onFxRefresh={fxRefresh} fxLoading={fxLoading}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr} cot={cotCr} base={crBase} setBase={setCrBase} onRefresh={crRefresh} loading={crLoading}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rfAt} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef} sim={simPrf} setSim={setSimPrf} defSim={DEF_SIM_PRF}/>;case"imoveis":return<ImoveisTab sim={simImo} setSim={setSimImo} defSim={DEF_SIM_IMO}/>;case"cfg":return<div><NuvemPanel sync={sync} authUser={authUser} onLogin={onLogin} onLogout={()=>sair()} loginErro={loginErro} bytes={syncTamanhoBytes(nuvemPayload)} legado={syncUid===SYNC_LEGADO}/><CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/></div>;default:return null;}};
+  const rT=()=>{switch(tab){case"dashboard":return<Dash rf={rfAt} inco={inco} ac={ac} etfs={etfs} fiis={fiis} cr={cr} indices={indices} orc={orc} cotCr={cotCr} crBase={crBase} setCrBase={setCrBase} fxUsd={fxUsd} rfCart={rfCart}/>;case"comp":return<CompTab/>;case"ana":return<AnaliseTab e={{rf:rfAt,inco,ac,etfs,fiis,cr,tdApos,tdLiza,orc,cotCr,fx:fxUsd,fiiCot:ld("ip8-fiiCot",null),acCot:_acCot,rfValor:rfCart.valor,rfFluxos:rfCart.fluxos,rfValores:rfValores}} idx={bcb} idxLoad={bcbLoad} buscar={bcbBuscar} snaps={snaps} alvos={alvos} setAlvos={setAlvos} reservaIds={reservaIds} setReservaIds={setReservaIds}/>;case"evo":return<EvoTab data={evo} setData={setEvo}/>;case"proj":return<ProjecoesTab tG={_tG} tRM={_tRM} retPct={_retPct} orc={orc} sim={simProj} setSim={setSimProj} defSim={DEF_SIM_PROJ}/>;case"rf":return<RFTab data={rf} setData={setRf} banks={banks} dashRetPct={_retPct} rfCart={rfCart}/>;case"inco":return<IncoTab data={inco} setData={setInco}/>;case"td":return<TDTab apos={tdApos} setApos={setTdApos} liza={tdLiza} setLiza={setTdLiza}/>;case"ac":return<AcTab data={ac} setData={setAc}/>;case"etf":return<EtfTab data={etfs} setData={setEtfs} hist={etfHist} setHist={setEtfHist} fx={fxUsd} onFxRefresh={fxRefresh} fxLoading={fxLoading}/>;case"fii":return<FiiTab data={fiis} setData={setFiis} fiiMkt={fiiMkt} setFiiMkt={setFiiMkt}/>;case"cr":return<CrTab data={cr} setData={setCr} cot={cotCr} base={crBase} setBase={setCrBase} onRefresh={crRefresh} loading={crLoading}/>;case"ap":return<ApTab data={aportes} setData={setAportes} banks={banks} meta={apMeta} setMeta={setApMeta}/>;case"sim":return<SimTab retPctMensal={_retPct}/>;case"orc":return<OrcTab data={orc} setData={setOrc}/>;case"ind":return<IndTab data={indices} setData={setIndices} prfRef={prfRef} setPrfRef={setPrfRef}/>;case"irpf":return<IrpfTab rf={rfAt} inco={inco} fiis={fiis} fiiMkt={fiiMkt} ac={ac} etfs={etfs} cr={cr}/>;case"prf":return<PrfTab prfRef={prfRef} sim={simPrf} setSim={setSimPrf} defSim={DEF_SIM_PRF}/>;case"imoveis":return<ImoveisTab sim={simImo} setSim={setSimImo} defSim={DEF_SIM_IMO}/>;case"cfg":return<div><NuvemPanel sync={sync} authUser={authUser} onLogin={onLogin} onLogout={()=>sair()} loginErro={loginErro} bytes={syncTamanhoBytes(nuvemPayload)} legado={syncUid===SYNC_LEGADO}/><CfgTab banks={banks} setBanks={setBanks} isDark={isDark} setIsDark={setIsDark} allState={allState} loadState={loadState} font={font} setFont={setFont}/></div>;default:return null;}};
   const isDarkSidebar=P.sidebarBg&&parseInt(P.sidebarBg.replace("#",""),16)<0x888888;
   const sbText=isDarkSidebar?"#e8e0d6":P.text;const sbTextDim=isDarkSidebar?"#a09890":P.textDim;const sbTextMuted=isDarkSidebar?"#6b635a":P.textMuted;const sbHover=isDarkSidebar?"rgba(255,255,255,0.08)":P.hover;const sbAccentGlow=isDarkSidebar?"rgba(196,98,42,0.20)":P.accentGlow;
   function SBItem({t}){const[h,setH]=useState(false);const active=tab===t.id;return(<div onClick={()=>setTab(t.id)} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 16px",cursor:"pointer",fontSize:12,fontWeight:active?600:400,color:active?P.accent:h?sbText:sbTextDim,background:active?sbAccentGlow:h?sbHover:"transparent",borderRight:active?`2px solid ${P.accent}`:"2px solid transparent",transition:"all 0.2s ease",borderRadius:h&&!active?"6px 0 0 6px":"0",transform:h&&!active?"translateX(4px)":"none"}}><span style={{fontSize:14,opacity:active?1:h?1:0.7,transition:"all 0.2s ease"}}>{t.ic}</span>{t.l}</div>);}
@@ -2555,7 +2584,8 @@ export default function App(){
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Roboto:wght@300;400;500;700&family=Poppins:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
     <div className="dsb" style={{position:"fixed",left:0,top:0,bottom:0,width:210,background:P.sidebarBg||P.surface,borderRight:`1px solid ${P.border}`,display:"flex",flexDirection:"column",zIndex:10}}><div style={{padding:"16px 16px 10px",borderBottom:`1px solid ${P.border}`,textAlign:"center"}}><div style={{fontSize:16,fontWeight:700,color:P.accent,letterSpacing:"-0.5px"}}>◉ NOD-INVEST</div><RelogioSB sbTextDim={sbTextDim} sbTextMuted={sbTextMuted}/></div><div style={{flex:1,overflowY:"auto"}}><SBG items={TABS_M}/><div style={{borderBottom:`2px solid ${P.textMuted}44`,margin:"4px 16px"}}/><SBG items={TABS_I} label="Investimentos"/><div style={{borderBottom:`2px solid ${P.textMuted}44`,margin:"4px 16px"}}/><SBG items={TABS_G} label="Gestão"/><div style={{borderBottom:`2px solid ${P.textMuted}44`,margin:"4px 16px"}}/><SBG items={TABS_S}/></div><div style={{padding:"10px 16px",borderTop:`1px solid ${P.border}`,fontSize:10,color:sbTextMuted}}>NOD-INVEST v12.0</div><div style={{padding:"6px 16px 10px",borderTop:"1px solid "+P.border}}><div title={sync.erro||""} style={{fontSize:9,marginBottom:3,color:sync.status==="ok"?P.accent:(sync.status==="erro"||sync.status==="conflito")?P.red:P.textMuted}}>{({aguardando:"Conectando…",carregando:"Sincronizando…",ok:"✓ Sincronizado",salvando:"Salvando…",erro:"⚠ Erro de sincronização (veja Config)",conflito:"⚠ Conflito — decida na tela"})[sync.status]||sync.status}</div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}><span style={{fontSize:9,color:sbTextMuted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{authUser?authUser.email:"sem login"}</span><button onClick={authUser?()=>sair():onLogin} style={{fontSize:9,color:sbTextDim,background:"transparent",border:"none",cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",flexShrink:0}}>{authUser?"Sair":"Entrar"}</button></div></div></div>
     <div className="mn" style={{position:"fixed",top:0,left:0,right:0,height:50,background:P.surface,borderBottom:`1px solid ${P.border}`,display:"none",alignItems:"center",padding:"0 8px",zIndex:20,overflowX:"auto",gap:2}}><span style={{color:P.accent,fontWeight:700,fontSize:13,marginRight:4,flexShrink:0}}>◉ NOD</span>{ALL_T.map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"5px 7px",borderRadius:5,fontSize:10,fontWeight:tab===t.id?600:400,color:tab===t.id?P.accent:P.textDim,background:tab===t.id?P.accentGlow:"transparent",border:"none",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>{t.l}</button>))}</div>
-    <div className="mc" style={{marginLeft:210,padding:"24px 28px",minHeight:"100vh"}}><BackupLembrete gerar={()=>baixarBackupJSON(allState())} temDados={rf.length+etfs.length+fiis.length+cr.length+ac.length+orc.length>0}/>{rT()}</div>
+    <div className="mc" style={{marginLeft:210,padding:"24px 28px",minHeight:"100vh"}}><BackupLembrete gerar={()=>baixarBackupJSON(allState())} temDados={rf.length+etfs.length+fiis.length+cr.length+ac.length+orc.length>0}/><ErroAba key={tab} nome={tab} P={P} onBackup={()=>baixarBackupJSON(allState())}>{rT()}</ErroAba></div>
+    <Avisos/>
     {sync.conflito&&<SyncConflict c={sync.conflito} onEscolha={sync.resolver} onBaixar={()=>{const b=new Blob([JSON.stringify(nuvemPayload,null,2)],{type:"application/json"});const u=URL.createObjectURL(b);const l=document.createElement("a");l.href=u;l.download="nod-invest-local-"+new Date().toISOString().slice(0,10)+".json";l.click();}}/>}
     <style>{`.mn{display:none!important}@media(max-width:800px){.dsb{display:none!important}.mn{display:flex!important}.mc{margin-left:0!important;padding:60px 12px 20px!important}}`}</style>
   </div></TC.Provider>);

@@ -6,6 +6,7 @@ import{fiiBuscarCotacoes,fiiMesclarCotacoes}from"./lib/fii.js";
 import{fsReal,entrarComGoogle,sair,observarLogin}from"./firebase.js";
 import{useCloudSync}from"./useCloudSync.js";
 import{rfCarteira,rfResgatado}from"./lib/rf.js";
+import{orcFrescor,orcFixosBase,orcSimularFixos}from"./lib/orc.js";
 import{getIR,temIR}from"./lib/rf.js";
 import{anFluxosAc,anAcPreco,anClasses,anSnapshot,anUpsert,anMesclarSnaps,anFluxos,anSerie,anBuscarIndices,anAcumulado,anAlocacao,anAporte,anDespesaMedia,anReserva}from"./lib/analise.js";
 import{SYNC_LEGADO,syncTamanhoBytes,SYNC_LIMITE_BYTES}from"./lib/sync.js";
@@ -330,15 +331,6 @@ function useSort(defField,defDir){const[sb,setSb]=useState(defField||null);const
 /* PRF: dias úteis (seg-sex) entre duas datas YYYY-MM-DD, inclusive */
 const prfNetworkDays=(start,end)=>{const a=ymdToUTC(start),b=ymdToUTC(end);if(isNaN(a)||isNaN(b))return 0;let c=0;for(let t=a;t<=b;t+=864e5){const w=new Date(t).getUTCDay();if(w!==0&&w!==6)c++;}return c;};
 const prfMonthBounds=ymd=>{const t=ymdToUTC(ymd);if(isNaN(t))return null;const d=new Date(t),y=d.getUTCFullYear(),m=d.getUTCMonth();return{first:Date.UTC(y,m,1),last:Date.UTC(y,m+1,0)};};
-/* Orçamento: aviso de atualização. Só conta gasto real (valor > 0, até hoje, últimos 15 dias); linhas-modelo dos fixos (valor vazio) não contam */
-const orcFrescor=(data,agora=new Date())=>{
-  if(!data.length)return null;
-  const hoje=localISO(agora),q15=localISO(new Date(agora.getFullYear(),agora.getMonth(),agora.getDate()-15));
-  const rec=data.filter(i=>i.tipo!=="Receita"&&Number(i.valor)>0&&i.data>=q15&&i.data<=hoje);
-  if(rec.length===0)return{ok:false};
-  const last=rec.reduce((a,b)=>b.data>a.data?b:a).data;
-  return{ok:true,last,dias:Math.round((ymdToUTC(hoje)-ymdToUTC(last))/864e5)};
-};
 /* Orçamento: linhas-modelo (categoria dos gastos fixos, sem valor) para um mês vazio; nunca para meses futuros */
 const orcModelosFixos=(data,mes,mesAtual,novoId)=>{
   if(mes>mesAtual)return[];
@@ -868,6 +860,50 @@ const catEmoji=cat=>CAT_EMOJI[cat]||"📌";
 const ORC_REC=["Salário","Honorários","Outros"];
 const AUTO_FIXO=["Água","Luz","Internet","Telefone","Unimed","Diarista","Clube","Educação","Escola Liza","Preta","Gasolina","Jardim","Seguro Vida","Piscina","Assinaturas","Sepal","INSS","Mercado"];
 const ORC_F=[{key:"data",label:"Data",type:"date"},{key:"tipo",label:"Tipo",type:"select",options:["Despesa","Receita"]},{key:"categoria",label:"Categoria",type:"select",options:ORC_C,dynamicOptions:true},{key:"descricao",label:"Descrição",placeholder:"Opcional"},{key:"valor",label:"Valor",type:"number",step:"0.01"},{key:"fixo",label:"Gasto Fixo",type:"checkbox",checkLabel:"Gasto fixo mensal",showWhen:"tipo=Despesa"}];
+/* Gastos fixos: base do mês atual + simulação (reajustes, cortes, novas despesas). Não altera os lançamentos. */
+function OrcFixos({data}){const P=useT();const S=useS();
+  const mes=localISO(new Date()).slice(0,7);const base=useMemo(()=>orcFixosBase(data,mes),[data,mes]);
+  const SIM0={pctGeral:"",ajustes:{},cortes:{},novos:[]};
+  const[sim,setSim]=useState(()=>({...SIM0,...ld("ip8-orcSim",{})}));useEffect(()=>{sv("ip8-orcSim",sim);},[sim]);
+  const r=orcSimularFixos(base,sim);
+  const receita=data.filter(i=>i.tipo==="Receita"&&(i.data||"").startsWith(mes)).reduce((a,i)=>a+(Number(i.valor)||0),0);
+  const setAj=(c,v)=>setSim(s=>({...s,ajustes:{...s.ajustes,[c]:v}}));const setCt=(c,v)=>setSim(s=>({...s,cortes:{...s.cortes,[c]:v}}));
+  const setNovo=(id,k,v)=>setSim(s=>({...s,novos:s.novos.map(x=>x.id===id?{...x,[k]:v}:x)}));
+  const cor=v=>v>0.005?P.red:v<-0.005?P.accent:P.textDim;const pctT=v=>v==null?"—":`${v>=0?"+":""}${v.toFixed(1)}%`;
+  const inp={...S.i,padding:"5px 8px",fontSize:12,width:110};const temSim=sim.pctGeral!==""||Object.values(sim.ajustes).some(v=>v!==""&&v!=null)||Object.values(sim.cortes).some(Boolean)||sim.novos.length>0;
+  return(<div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:14,marginBottom:20}}>
+      <SC label={`Fixos atuais (${mL(mes)})`} value={fmt(r.atual)} color={P.blue} dim={P.blueDim}/>
+      <SC label="Fixos simulados" value={fmt(r.simulado)} color={P.purple||P.blue} dim={P.purpleDim||P.blueDim}/>
+      <SC label="Diferença / mês" value={`${r.dif>=0?"+":""}${fmt(r.dif)}`} color={cor(r.dif)} dim={r.dif>0?P.redDim:P.accentGlow}/>
+      <SC label="Diferença / ano" value={`${r.difAno>=0?"+":""}${fmt(r.difAno)}`} color={cor(r.difAno)} dim={r.difAno>0?P.redDim:P.accentGlow}/>
+      {receita>0&&<SC label="Fixos / receita do mês" value={`${(r.atual/receita*100).toFixed(1)}% → ${(r.simulado/receita*100).toFixed(1)}%`} color={P.yellow} dim={P.yellowDim}/>}
+    </div>
+    <div style={S.card}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:14}}>
+        <div><div style={{fontSize:14,fontWeight:700}}>Gastos fixos — simulação</div><div style={{fontSize:11,color:P.textMuted,marginTop:2}}>Base: categorias marcadas como fixas no mês atual. Sem valor lançado ainda no mês, usa o último mês com valor (até 12 meses). A simulação não altera seus lançamentos.</div></div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}><label style={{fontSize:12,color:P.textDim}}>Reajuste geral (%)</label><input type="number" step="0.1" style={{...inp,width:80}} placeholder="0" value={sim.pctGeral} onChange={e=>setSim(s=>({...s,pctGeral:e.target.value}))}/>
+          {temSim&&<button style={S.btnO} onClick={()=>setSim(SIM0)}>Limpar simulação</button>}</div></div>
+      {!base.length&&!sim.novos.length?<div style={{fontSize:13,color:P.textMuted,padding:"20px 0"}}>Nenhum gasto fixo encontrado. Marque lançamentos como "fixo" no Orçamento ou adicione uma despesa fixa simulada abaixo.</div>:
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>{["Categoria","Valor atual","Ref.","Valor simulado","Variação","Var. %","Cortar"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+        <tbody>{r.linhas.map((l,ri)=>(<tr key={l.categoria} style={{background:ri%2?"rgba(128,140,160,0.12)":undefined,opacity:l.cortado?0.55:1}}>
+          <td style={{...S.td,fontWeight:600,textDecoration:l.cortado?"line-through":"none"}}>{l.categoria}</td>
+          <td style={S.td}>{fmt(l.valor)}</td>
+          <td style={{...S.td,fontSize:11,color:l.doMes?P.textDim:P.yellow}} title={l.doMes?"lançado no mês atual":"ainda sem valor no mês atual: usando o último mês com valor"}>{l.ref?mL(l.ref):"sem valor"}</td>
+          <td style={S.td}><input type="number" step="0.01" min="0" style={inp} disabled={l.cortado} placeholder={l.simulado.toFixed(2)} value={(sim.ajustes[l.categoria]??"")} onChange={e=>setAj(l.categoria,e.target.value)}/></td>
+          <td style={{...S.td,color:cor(l.dif),fontWeight:600}}>{l.dif>=0?"+":""}{fmt(l.dif)}</td>
+          <td style={{...S.td,color:cor(l.dif)}}>{pctT(l.pct)}</td>
+          <td style={S.td}><input type="checkbox" checked={l.cortado} onChange={e=>setCt(l.categoria,e.target.checked)}/></td></tr>))}
+        {r.novos.map(x=>(<tr key={x.id} style={{background:"rgba(59,130,246,0.08)"}}>
+          <td style={S.td}><input style={{...inp,width:160}} placeholder="Nova despesa" value={x.nome||""} onChange={e=>setNovo(x.id,"nome",e.target.value)}/></td>
+          <td style={{...S.td,color:P.textMuted}}>—</td><td style={{...S.td,fontSize:11,color:P.blue}}>nova</td>
+          <td style={S.td}><input type="number" step="0.01" min="0" style={inp} placeholder="0,00" value={x.valor||""} onChange={e=>setNovo(x.id,"valor",e.target.value)}/></td>
+          <td style={{...S.td,color:cor(x.valorNum),fontWeight:600}}>+{fmt(x.valorNum)}</td><td style={{...S.td,color:P.textMuted}}>—</td>
+          <td style={S.td}><button style={{background:"transparent",border:"none",color:P.textMuted,cursor:"pointer",fontSize:15,fontFamily:"inherit"}} title="remover" onClick={()=>setSim(s=>({...s,novos:s.novos.filter(y=>y.id!==x.id)}))}>✕</button></td></tr>))}</tbody>
+        <tfoot><tr style={{borderTop:`2px solid ${P.border}`}}><td style={{...S.td,fontWeight:700,borderBottom:"none"}}>TOTAL</td><td style={{...S.td,fontWeight:700,borderBottom:"none"}}>{fmt(r.atual)}</td><td style={{...S.td,borderBottom:"none"}}></td>
+          <td style={{...S.td,fontWeight:700,borderBottom:"none"}}>{fmt(r.simulado)}</td><td style={{...S.td,fontWeight:700,color:cor(r.dif),borderBottom:"none"}}>{r.dif>=0?"+":""}{fmt(r.dif)}</td><td style={{...S.td,fontWeight:700,color:cor(r.dif),borderBottom:"none"}}>{pctT(r.pct)}</td><td style={{...S.td,borderBottom:"none"}}></td></tr></tfoot></table></div>}
+      <div style={{marginTop:14}}><button style={S.btn(P.blue)} onClick={()=>setSim(s=>({...s,novos:[...s.novos,{id:uid(),nome:"",valor:""}]}))}>+ Nova despesa fixa (simulada)</button></div>
+    </div></div>);}
 function OrcTab({data,setData}){const P=useT();const S=useS();
   const{sb:orcSb,sd:orcSd,onS:orcOnS,doS:orcDoS}=useSort("valor","desc");
   const[mF,setMF]=useState(()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
@@ -1042,6 +1078,7 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
         <button style={sub==="visao"?S.btnA():S.btnO} onClick={()=>setSub("visao")}>Visão</button>
         <button style={sub==="relatorio"?S.btnA():S.btnO} onClick={()=>setSub("relatorio")}>Relatório</button>
+        <button style={sub==="fixos"?S.btnA():S.btnO} onClick={()=>setSub("fixos")}>Gastos Fixos</button>
         <select style={{...S.sel,width:"auto",minWidth:140}} value={mF} onChange={e=>setMF(e.target.value)}>{aM.map(m=><option key={m} value={m}>{mL(m)}</option>)}</select>
         <button style={S.btn()} onClick={()=>setModal("new")}>+ Novo</button>
         <label style={{...S.btnO,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><input type="file" accept=".csv,.txt,.ofx,.pdf" style={{display:"none"}} onChange={handleImport}/>📎 Fatura Cartão</label>
@@ -1091,10 +1128,10 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
 
     {(()=>{
       const f=orcFrescor(data);if(!f)return null;
-      if(!f.ok){return(<div style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.4)",borderRadius:8,padding:"10px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:18}}>⚠️</span><div><div style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>Gastos desatualizados</div><div style={{fontSize:11,color:"#dc2626",opacity:0.8}}>Nenhum gasto nos últimos 15 dias. Atualize via <b>📎 Fatura Cartão</b> ou <b>🏦 Extrato Banco</b>.</div></div></div>);}
+      if(!f.ok){return(<div style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.4)",borderRadius:8,padding:"10px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:18}}>⚠️</span><div><div style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>Gastos desatualizados</div><div style={{fontSize:11,color:"#dc2626",opacity:0.8}}>{f.last?<React.Fragment>Último gasto registrado em <b>{fD(f.last)}</b> (há {f.dias===1?"1 dia":`${f.dias} dias`}). </React.Fragment>:"Nenhum gasto registrado ainda. "}Nenhum gasto nos últimos 15 dias. Atualize via <b>📎 Fatura Cartão</b> ou <b>🏦 Extrato Banco</b>.</div></div></div>);}
       return(<div style={{background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.35)",borderRadius:8,padding:"10px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:18}}>✅</span><div><div style={{fontSize:12,fontWeight:700,color:"#16a34a"}}>Gastos atualizados</div><div style={{fontSize:11,color:"#16a34a",opacity:0.8}}>Último lançamento há {f.dias===0?"hoje":f.dias===1?"1 dia":`${f.dias} dias`} ({fD(f.last)}).</div></div></div>);
     })()}
-    {sub==="relatorio"?(<div>
+    {sub==="fixos"?<OrcFixos data={data}/>:sub==="relatorio"?(<div>
       <div style={S.card}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><div style={{fontSize:14,fontWeight:700}}>Relatório Comparativo</div><div style={{display:"flex",gap:8}}><button style={S.btnO} onClick={()=>{setRepCats([]);setRepMonths([]);}}>Limpar Tudo</button><button style={S.btnO} onClick={()=>setRepMonths([...allMonths])}>Selecionar Todo Período</button></div></div>
         <div style={{marginBottom:16}}>
@@ -2508,6 +2545,10 @@ export default function App(){return(<ErroRaiz><AppInner/></ErroRaiz>);}
 function AppInner(){
   const[authUser,setAuthUser]=useState(null);const[authPronto,setAuthPronto]=useState(false);const[loginErro,setLoginErro]=useState("");
   const[isDark,setIsDark]=useState(()=>ld(SK.theme,"industrial"));const[tab,setTab]=useState("dashboard");
+  /* Menu lateral redimensionável: arrastar a borda direita; duplo clique volta ao padrão. Mínimo garante que os rótulos não sejam cortados. */
+  const SB_MIN=210,SB_MAX=420;const[sbW,setSbW]=useState(()=>{const w=Number(ld("ip8-sbW",SB_MIN));return Math.min(SB_MAX,Math.max(SB_MIN,w||SB_MIN));});const[sbArr,setSbArr]=useState(false);
+  useEffect(()=>{sv("ip8-sbW",sbW);},[sbW]);
+  const sbIniciar=e=>{e.preventDefault();setSbArr(true);const mv=ev=>{const x=ev.touches?ev.touches[0].clientX:ev.clientX;setSbW(Math.round(Math.min(SB_MAX,Math.max(SB_MIN,x))));};const up=()=>{setSbArr(false);window.removeEventListener("mousemove",mv);window.removeEventListener("mouseup",up);window.removeEventListener("touchmove",mv);window.removeEventListener("touchend",up);document.body.style.cursor="";document.body.style.userSelect="";};document.body.style.cursor="col-resize";document.body.style.userSelect="none";window.addEventListener("mousemove",mv);window.addEventListener("mouseup",up);window.addEventListener("touchmove",mv);window.addEventListener("touchend",up);};
   const[font,setFont]=useState(()=>ld("ip8-font","montserrat"));
   const[rf,setRf]=useState(()=>ld(SK.rf,[]));const[inco,setInco]=useState(()=>ld(SK.inco,[]));
   const[ac,setAc]=useState(()=>ld(SK.ac,[]));const[etfs,setEtfs]=useState(()=>ld(SK.etf,[]));
@@ -2582,11 +2623,11 @@ function AppInner(){
   const fontFamily=font==="roboto"?"'Roboto',sans-serif":font==="poppins"?"'Poppins',sans-serif":font==="montserrat"?"'Montserrat',sans-serif":"'JetBrains Mono','SF Mono',monospace";
   return(<TC.Provider value={P}><div style={{fontFamily,background:P.bg,color:P.text,minHeight:"100vh",fontSize:13}}>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Roboto:wght@300;400;500;700&family=Poppins:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
-    <div className="dsb" style={{position:"fixed",left:0,top:0,bottom:0,width:210,background:P.sidebarBg||P.surface,borderRight:`1px solid ${P.border}`,display:"flex",flexDirection:"column",zIndex:10}}><div style={{padding:"16px 16px 10px",borderBottom:`1px solid ${P.border}`,textAlign:"center"}}><div style={{fontSize:16,fontWeight:700,color:P.accent,letterSpacing:"-0.5px"}}>◉ NOD-INVEST</div><RelogioSB sbTextDim={sbTextDim} sbTextMuted={sbTextMuted}/></div><div style={{flex:1,overflowY:"auto"}}><SBG items={TABS_M}/><div style={{borderBottom:`2px solid ${P.textMuted}44`,margin:"4px 16px"}}/><SBG items={TABS_I} label="Investimentos"/><div style={{borderBottom:`2px solid ${P.textMuted}44`,margin:"4px 16px"}}/><SBG items={TABS_G} label="Gestão"/><div style={{borderBottom:`2px solid ${P.textMuted}44`,margin:"4px 16px"}}/><SBG items={TABS_S}/></div><div style={{padding:"10px 16px",borderTop:`1px solid ${P.border}`,fontSize:10,color:sbTextMuted}}>NOD-INVEST v12.0</div><div style={{padding:"6px 16px 10px",borderTop:"1px solid "+P.border}}><div title={sync.erro||""} style={{fontSize:9,marginBottom:3,color:sync.status==="ok"?P.accent:(sync.status==="erro"||sync.status==="conflito")?P.red:P.textMuted}}>{({aguardando:"Conectando…",carregando:"Sincronizando…",ok:"✓ Sincronizado",salvando:"Salvando…",erro:"⚠ Erro de sincronização (veja Config)",conflito:"⚠ Conflito — decida na tela"})[sync.status]||sync.status}</div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}><span style={{fontSize:9,color:sbTextMuted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{authUser?authUser.email:"sem login"}</span><button onClick={authUser?()=>sair():onLogin} style={{fontSize:9,color:sbTextDim,background:"transparent",border:"none",cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",flexShrink:0}}>{authUser?"Sair":"Entrar"}</button></div></div></div>
+    <div className="dsb" style={{position:"fixed",left:0,top:0,bottom:0,width:sbW,background:P.sidebarBg||P.surface,borderRight:`1px solid ${P.border}`,display:"flex",flexDirection:"column",zIndex:10}}><div className="sbres" title="Arraste para ajustar a largura · duplo clique: padrão" onMouseDown={sbIniciar} onTouchStart={sbIniciar} onDoubleClick={()=>setSbW(SB_MIN)} style={{position:"absolute",top:0,right:-3,width:7,bottom:0,cursor:"col-resize",zIndex:11,background:sbArr?P.accent:"transparent",opacity:sbArr?0.5:1,transition:"background .15s"}}/><div style={{padding:"16px 16px 10px",borderBottom:`1px solid ${P.border}`,textAlign:"center"}}><div style={{fontSize:16,fontWeight:700,color:P.accent,letterSpacing:"-0.5px"}}>◉ NOD-INVEST</div><RelogioSB sbTextDim={sbTextDim} sbTextMuted={sbTextMuted}/></div><div style={{flex:1,overflowY:"auto"}}><SBG items={TABS_M}/><div style={{borderBottom:`2px solid ${P.textMuted}44`,margin:"4px 16px"}}/><SBG items={TABS_I} label="Investimentos"/><div style={{borderBottom:`2px solid ${P.textMuted}44`,margin:"4px 16px"}}/><SBG items={TABS_G} label="Gestão"/><div style={{borderBottom:`2px solid ${P.textMuted}44`,margin:"4px 16px"}}/><SBG items={TABS_S}/></div><div style={{padding:"10px 16px",borderTop:`1px solid ${P.border}`,fontSize:10,color:sbTextMuted}}>NOD-INVEST v12.0</div><div style={{padding:"6px 16px 10px",borderTop:"1px solid "+P.border}}><div title={sync.erro||""} style={{fontSize:9,marginBottom:3,color:sync.status==="ok"?P.accent:(sync.status==="erro"||sync.status==="conflito")?P.red:P.textMuted}}>{({aguardando:"Conectando…",carregando:"Sincronizando…",ok:"✓ Sincronizado",salvando:"Salvando…",erro:"⚠ Erro de sincronização (veja Config)",conflito:"⚠ Conflito — decida na tela"})[sync.status]||sync.status}</div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}><span style={{fontSize:9,color:sbTextMuted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{authUser?authUser.email:"sem login"}</span><button onClick={authUser?()=>sair():onLogin} style={{fontSize:9,color:sbTextDim,background:"transparent",border:"none",cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",flexShrink:0}}>{authUser?"Sair":"Entrar"}</button></div></div></div>
     <div className="mn" style={{position:"fixed",top:0,left:0,right:0,height:50,background:P.surface,borderBottom:`1px solid ${P.border}`,display:"none",alignItems:"center",padding:"0 8px",zIndex:20,overflowX:"auto",gap:2}}><span style={{color:P.accent,fontWeight:700,fontSize:13,marginRight:4,flexShrink:0}}>◉ NOD</span>{ALL_T.map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"5px 7px",borderRadius:5,fontSize:10,fontWeight:tab===t.id?600:400,color:tab===t.id?P.accent:P.textDim,background:tab===t.id?P.accentGlow:"transparent",border:"none",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>{t.l}</button>))}</div>
-    <div className="mc" style={{marginLeft:210,padding:"24px 28px",minHeight:"100vh"}}><BackupLembrete gerar={()=>baixarBackupJSON(allState())} temDados={rf.length+etfs.length+fiis.length+cr.length+ac.length+orc.length>0}/><ErroAba key={tab} nome={tab} P={P} onBackup={()=>baixarBackupJSON(allState())}>{rT()}</ErroAba></div>
+    <div className="mc" style={{marginLeft:sbW,padding:"24px 28px",minHeight:"100vh"}}><BackupLembrete gerar={()=>baixarBackupJSON(allState())} temDados={rf.length+etfs.length+fiis.length+cr.length+ac.length+orc.length>0}/><ErroAba key={tab} nome={tab} P={P} onBackup={()=>baixarBackupJSON(allState())}>{rT()}</ErroAba></div>
     <Avisos/>
     {sync.conflito&&<SyncConflict c={sync.conflito} onEscolha={sync.resolver} onBaixar={()=>{const b=new Blob([JSON.stringify(nuvemPayload,null,2)],{type:"application/json"});const u=URL.createObjectURL(b);const l=document.createElement("a");l.href=u;l.download="nod-invest-local-"+new Date().toISOString().slice(0,10)+".json";l.click();}}/>}
-    <style>{`.mn{display:none!important}@media(max-width:800px){.dsb{display:none!important}.mn{display:flex!important}.mc{margin-left:0!important;padding:60px 12px 20px!important}}`}</style>
+    <style>{`.sbres:hover{background:rgba(128,140,160,0.35)!important}.mn{display:none!important}@media(max-width:800px){.dsb{display:none!important}.mn{display:flex!important}.mc{margin-left:0!important;padding:60px 12px 20px!important}}`}</style>
   </div></TC.Provider>);
 }

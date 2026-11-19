@@ -869,11 +869,11 @@ function OrcFixos({data}){const P=useT();const S=useS();
   const receita=data.filter(i=>i.tipo==="Receita"&&(i.data||"").startsWith(mes)).reduce((a,i)=>a+(Number(i.valor)||0),0);
   const setAj=(c,v)=>setSim(s=>({...s,ajustes:{...s.ajustes,[c]:v}}));const setCt=(c,v)=>setSim(s=>({...s,cortes:{...s.cortes,[c]:v}}));
   const setNovo=(id,k,v)=>setSim(s=>({...s,novos:s.novos.map(x=>x.id===id?{...x,[k]:v}:x)}));
-  const cor=v=>v>0.005?P.red:v<-0.005?P.accent:P.textDim;const pctT=v=>v==null?"—":`${v>=0?"+":""}${v.toFixed(1)}%`;
+  const cor=v=>v>0.005?P.red:v<-0.005?P.accent:P.textDim;
   const inp={...S.i,padding:"5px 8px",fontSize:12,width:110};const temSim=sim.pctGeral!==""||Object.values(sim.ajustes).some(v=>v!==""&&v!=null)||Object.values(sim.cortes).some(Boolean)||sim.novos.length>0;
   return(<div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:14,marginBottom:20}}>
-      <SC label={`Fixos atuais (${mL(mes)})`} value={fmt(r.atual)} color={P.blue} dim={P.blueDim}/>
+      <SC label="Fixos atuais" value={fmt(r.atual)} color={P.blue} dim={P.blueDim}/>
       <SC label="Fixos simulados" value={fmt(r.simulado)} color={P.purple||P.blue} dim={P.purpleDim||P.blueDim}/>
       <SC label="Diferença / mês" value={`${r.dif>=0?"+":""}${fmt(r.dif)}`} color={cor(r.dif)} dim={r.dif>0?P.redDim:P.accentGlow}/>
       <SC label="Diferença / ano" value={`${r.difAno>=0?"+":""}${fmt(r.difAno)}`} color={cor(r.difAno)} dim={r.difAno>0?P.redDim:P.accentGlow}/>
@@ -881,27 +881,23 @@ function OrcFixos({data}){const P=useT();const S=useS();
     </div>
     <div style={S.card}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:14}}>
-        <div><div style={{fontSize:14,fontWeight:700}}>Gastos fixos — simulação</div><div style={{fontSize:11,color:P.textMuted,marginTop:2}}>Base: categorias marcadas como fixas no mês atual. Sem valor lançado ainda no mês, usa o último mês com valor (até 12 meses). A simulação não altera seus lançamentos.</div></div>
+        <div><div style={{fontSize:14,fontWeight:700}}>Gastos fixos — simulação</div><div style={{fontSize:11,color:P.textMuted,marginTop:2}}>Itens marcados como gastos fixos no Orçamento. A simulação não altera seus lançamentos.</div></div>
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}><label style={{fontSize:12,color:P.textDim}}>Reajuste geral (%)</label><input type="number" step="0.1" style={{...inp,width:80}} placeholder="0" value={sim.pctGeral} onChange={e=>setSim(s=>({...s,pctGeral:e.target.value}))}/>
           {temSim&&<button style={S.btnO} onClick={()=>setSim(SIM0)}>Limpar simulação</button>}</div></div>
       {!base.length&&!sim.novos.length?<div style={{fontSize:13,color:P.textMuted,padding:"20px 0"}}>Nenhum gasto fixo encontrado. Marque lançamentos como "fixo" no Orçamento ou adicione uma despesa fixa simulada abaixo.</div>:
-      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>{["Categoria","Valor atual","Ref.","Valor simulado","Variação","Var. %","Cortar"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>{["Categoria","Valor atual","Valor simulado","Cortar"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
         <tbody>{r.linhas.map((l,ri)=>(<tr key={l.categoria} style={{background:ri%2?"rgba(128,140,160,0.12)":undefined,opacity:l.cortado?0.55:1}}>
           <td style={{...S.td,fontWeight:600,textDecoration:l.cortado?"line-through":"none"}}>{l.categoria}</td>
           <td style={S.td}>{fmt(l.valor)}</td>
-          <td style={{...S.td,fontSize:11,color:l.doMes?P.textDim:P.yellow}} title={l.doMes?"lançado no mês atual":"ainda sem valor no mês atual: usando o último mês com valor"}>{l.ref?mL(l.ref):"sem valor"}</td>
           <td style={S.td}><input type="number" step="0.01" min="0" style={inp} disabled={l.cortado} placeholder={l.simulado.toFixed(2)} value={(sim.ajustes[l.categoria]??"")} onChange={e=>setAj(l.categoria,e.target.value)}/></td>
-          <td style={{...S.td,color:cor(l.dif),fontWeight:600}}>{l.dif>=0?"+":""}{fmt(l.dif)}</td>
-          <td style={{...S.td,color:cor(l.dif)}}>{pctT(l.pct)}</td>
           <td style={S.td}><input type="checkbox" checked={l.cortado} onChange={e=>setCt(l.categoria,e.target.checked)}/></td></tr>))}
         {r.novos.map(x=>(<tr key={x.id} style={{background:"rgba(59,130,246,0.08)"}}>
           <td style={S.td}><input style={{...inp,width:160}} placeholder="Nova despesa" value={x.nome||""} onChange={e=>setNovo(x.id,"nome",e.target.value)}/></td>
-          <td style={{...S.td,color:P.textMuted}}>—</td><td style={{...S.td,fontSize:11,color:P.blue}}>nova</td>
+          <td style={{...S.td,fontSize:11,color:P.blue}}>nova</td>
           <td style={S.td}><input type="number" step="0.01" min="0" style={inp} placeholder="0,00" value={x.valor||""} onChange={e=>setNovo(x.id,"valor",e.target.value)}/></td>
-          <td style={{...S.td,color:cor(x.valorNum),fontWeight:600}}>+{fmt(x.valorNum)}</td><td style={{...S.td,color:P.textMuted}}>—</td>
           <td style={S.td}><button style={{background:"transparent",border:"none",color:P.textMuted,cursor:"pointer",fontSize:15,fontFamily:"inherit"}} title="remover" onClick={()=>setSim(s=>({...s,novos:s.novos.filter(y=>y.id!==x.id)}))}>✕</button></td></tr>))}</tbody>
-        <tfoot><tr style={{borderTop:`2px solid ${P.border}`}}><td style={{...S.td,fontWeight:700,borderBottom:"none"}}>TOTAL</td><td style={{...S.td,fontWeight:700,borderBottom:"none"}}>{fmt(r.atual)}</td><td style={{...S.td,borderBottom:"none"}}></td>
-          <td style={{...S.td,fontWeight:700,borderBottom:"none"}}>{fmt(r.simulado)}</td><td style={{...S.td,fontWeight:700,color:cor(r.dif),borderBottom:"none"}}>{r.dif>=0?"+":""}{fmt(r.dif)}</td><td style={{...S.td,fontWeight:700,color:cor(r.dif),borderBottom:"none"}}>{pctT(r.pct)}</td><td style={{...S.td,borderBottom:"none"}}></td></tr></tfoot></table></div>}
+        <tfoot><tr style={{borderTop:`2px solid ${P.border}`}}><td style={{...S.td,fontWeight:700,borderBottom:"none"}}>TOTAL</td><td style={{...S.td,fontWeight:700,borderBottom:"none"}}>{fmt(r.atual)}</td>
+          <td style={{...S.td,fontWeight:700,borderBottom:"none"}}>{fmt(r.simulado)}</td><td style={{...S.td,borderBottom:"none"}}></td></tr></tfoot></table></div>}
       <div style={{marginTop:14}}><button style={S.btn(P.blue)} onClick={()=>setSim(s=>({...s,novos:[...s.novos,{id:uid(),nome:"",valor:""}]}))}>+ Nova despesa fixa (simulada)</button></div>
     </div></div>);}
 function OrcTab({data,setData}){const P=useT();const S=useS();
@@ -1079,7 +1075,7 @@ function OrcTab({data,setData}){const P=useT();const S=useS();
         <button style={sub==="visao"?S.btnA():S.btnO} onClick={()=>setSub("visao")}>Visão</button>
         <button style={sub==="relatorio"?S.btnA():S.btnO} onClick={()=>setSub("relatorio")}>Relatório</button>
         <button style={sub==="fixos"?S.btnA():S.btnO} onClick={()=>setSub("fixos")}>Gastos Fixos</button>
-        <select style={{...S.sel,width:"auto",minWidth:140}} value={mF} onChange={e=>setMF(e.target.value)}>{aM.map(m=><option key={m} value={m}>{mL(m)}</option>)}</select>
+        {sub!=="fixos"&&<select style={{...S.sel,width:"auto",minWidth:140}} value={mF} onChange={e=>setMF(e.target.value)}>{aM.map(m=><option key={m} value={m}>{mL(m)}</option>)}</select>}
         <button style={S.btn()} onClick={()=>setModal("new")}>+ Novo</button>
         <label style={{...S.btnO,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><input type="file" accept=".csv,.txt,.ofx,.pdf" style={{display:"none"}} onChange={handleImport}/>📎 Fatura Cartão</label>
         <label style={{...S.btnO,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><input type="file" accept=".csv,.txt,.ofx,.pdf" style={{display:"none"}} onChange={handleExtrato}/>🏦 Extrato Banco</label>

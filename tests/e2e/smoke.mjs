@@ -10,6 +10,7 @@ const DADOS={
  "ip8-fii":[{id:"f1",ticker:"HGLG11",quantidade:"10",precoMedio:"150",dataCompra:"2025-03-01"}],
  "ip8-cr":[{id:"c1",ticker:"BTC",tipo:"Compra",quantidade:"0.01",valorInvestido:"3000",dataCompra:"2025-05-01"}],
  "ip8-ac":[{id:"a1",ticker:"PETR4",quantidade:"100",precoMedio:"30"}],
+ "ip8-theme":"glass",
  "ip8-orc":[{id:"o1",tipo:"Despesa",data:`${mes}-02`,categoria:"Mercado",descricao:"Teste",valor:"500"},{id:"o2",tipo:"Receita",data:`${mes}-01`,categoria:"Salário",descricao:"Teste",valor:"5000"}]};
 const serie=cod=>Array.from({length:120},(_,k)=>{const d=new Date(Date.UTC(new Date().getUTCFullYear(),new Date().getUTCMonth()-k,1));return{data:`01/${String(d.getUTCMonth()+1).padStart(2,"0")}/${d.getUTCFullYear()}`,valor:cod==="4391"?"1.00":cod==="433"?"0.40":"10.00"};});
 async function rodar(browser,seed,rotulo){
